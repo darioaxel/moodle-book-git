@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    paths: ["engine/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["engine/**", ".github/workflows/ci.yml"]
+
+defaults:
+  run:
+    working-directory: engine
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: engine/pyproject.toml
+
+      - name: Install (editable + dev)
+        run: pip install -e .[dev]
+
+      - name: Ruff (lint + format)
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Mypy (strict)
+        run: mypy
+
+      - name: Pytest
+        run: pytest
