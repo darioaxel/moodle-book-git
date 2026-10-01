@@ -1,6 +1,6 @@
 """Modelos de dominio puros (sin dependencias de Git, Moodle ni API)."""
 
-from courseascode.domain.content import Book, Chapter, Course
+from courseascode.domain.content import Book, Chapter, Course, Numbering
 from courseascode.domain.deployment import (
     ActionKind,
     DeploymentAction,
@@ -23,6 +23,7 @@ __all__ = [
     "DeploymentResult",
     "DeploymentState",
     "GitRef",
+    "Numbering",
     "RefKind",
     "SemVer",
     "Severity",

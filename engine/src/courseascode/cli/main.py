@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
+
+from courseascode.git.worktree import WorktreeError, temporary_checkout
+from courseascode.manifests.validator import Validator
 
 app = typer.Typer(
     name="courseascode",
@@ -31,7 +35,19 @@ def validate(
     ] = None,
 ) -> None:
     """Valida manifests, capítulos, assets y enlaces (§20)."""
-    _not_implemented()
+    root = Path(path).resolve()
+    if ref is not None:
+        try:
+            with temporary_checkout(root, ref) as checkout:
+                report = Validator().validate(checkout)
+        except WorktreeError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+    else:
+        report = Validator().validate(root)
+    typer.echo(report.render())
+    if not report.ok:
+        raise typer.Exit(code=1)
 
 
 @app.command()

@@ -16,11 +16,11 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 0 — Fundaciones ✅ (2026-10-01) · **Próximo:** Fase 1 — Manifests y validación
+**Fase actual:** 1 — Manifests y validación ✅ (2026-10-01) · **Próximo:** Fase 2 — Git adapter
 
 | Milestone | Contenido | Estado |
 |---|---|---|
-| M1 (F0–F4) | validate + preview | 🟡 F0 ✅ · F1–F4 ⬜ |
+| M1 (F0–F4) | validate + preview | 🟡 F0–F1 ✅ · F2–F4 ⬜ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -48,15 +48,31 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 `SemVer` parsea y compara `1.2.0+juan.3` ✓ (tests) · `make check` verde:
 ruff ✓, mypy strict sin errores ✓, 27 tests ✓.
 
-### FASE 1 — Manifests y validación — ⬜ pendiente
+### FASE 1 — Manifests y validación — ✅ completada el 2026-10-01
 
-- [ ] **ENG-010** (M) Esquema pydantic de `course.yml`.
-- [ ] **ENG-011** (M) Esquema pydantic de `book.yml` (sin campo `version`: lo da Git).
-- [ ] **ENG-012** (M) `ManifestParser` con errores localizados (archivo, línea, campo).
-- [ ] **ENG-013** (L) `Validator` con todas las reglas (§20).
-- [ ] **ENG-014** (M) Salida formateada ✓/✗ con exit code 0/1.
-- [ ] **ENG-015** (S) `courseascode validate [path] [--ref]` operativo.
-- [ ] **ENG-016** (M) Fixture repo con 1 caso válido y ≥8 inválidos.
+- [x] **ENG-010** (M) Esquema pydantic de `course.yml` (`CourseManifest`, `BookRef`).
+- [x] **ENG-011** (M) Esquema pydantic de `book.yml` (`BookManifest`, `ChapterManifest`);
+  sin campo `version` (lo da Git). Metadatos de catálogo opcionales en el esquema
+  para que el validador los reporte como categoría propia.
+- [x] **ENG-012** (M) `ManifestParser` con errores localizados (archivo, línea, campo),
+  mensajes "YAML inválido: …" y `ManifestError` con issues agregados.
+- [x] **ENG-013** (L) `Validator` con todas las reglas: YAML válido · IDs únicos
+  (books y capítulos) · archivos de capítulos existentes · assets existentes
+  (imágenes + cover) · enlaces internos `.md` resolubles · contenedores `:::` cerrados ·
+  metadatos de catálogo presentes · `numbering` válido (enum). Escaneo Markdown con
+  markdown-it-py (líneas exactas de cada referencia).
+- [x] **ENG-014** (M) Salida formateada ✓/✗ por categoría con detalle
+  `archivo:línea — mensaje` y exit code 0/1 (formato §20 verificado).
+- [x] **ENG-015** (S) `courseascode validate [path] [--ref]` operativo sobre working
+  tree y sobre refs (worktree temporal aislado en `git/worktree.py`, provisional
+  hasta ENG-020/021).
+- [x] **ENG-016** (M) Fixtures en `tests/fixtures/repos/`: 1 repo válido (5 capítulos,
+  2 assets, enlaces internos, admonitions) y 10 inválidos (uno por regla).
+
+**DoD Fase 1 — verificado (2026-10-01):** `validate` sobre el fixture válido →
+`Validation successful.` (exit 0); sobre cada uno de los 10 fixtures inválidos,
+error específico y exit 1; `--ref` valida el tag y no el working tree (test con
+repo Git temporal). `make check` verde: ruff ✓, mypy strict ✓, **48 tests** ✓.
 
 ### FASE 2 — Git adapter — ⬜ pendiente
 
@@ -133,6 +149,20 @@ ruff ✓, mypy strict sin errores ✓, 27 tests ✓.
 - Creada esta bitácora y README del proyecto con diagramas.
 - **Pendiente para la próxima sesión:** Fase 1 (ENG-010 a ENG-016). Prerequisitos:
   añadir dependencias PyYAML + GitPython al `pyproject.toml` al empezar ENG-010/020.
+
+### 2026-10-01 — Sesión 2: Fase 1 completa (manifests y validación)
+
+- **ENG-010 a ENG-016 implementados**: esquemas pydantic (`CourseManifest`,
+  `BookManifest`), `ManifestParser` con errores localizados, `Validator` con las
+  reglas de §20, salida ✓/✗ con exit 0/1, comando `validate [--ref]` (worktree
+  temporal provisional en `git/worktree.py`) y fixtures (1 válido + 10 inválidos).
+- Dependencias añadidas: `pyyaml`, `markdown-it-py`, `types-PyYAML`.
+- **DoD verificado**: fixture válido → `Validation successful.`; los 10 inválidos
+  fallan con su error específico; `--ref` valida el tag, no el disco.
+  `make check` verde: ruff ✓, mypy strict ✓, **48 tests** ✓.
+- **Pendiente para la próxima sesión:** Fase 2 (ENG-020–026). Prerequisitos:
+  añadir `GitPython` al `pyproject.toml`; al formalizar `GitProvider`, migrar
+  `git/worktree.py` (ENG-015) a la interfaz nueva.
 
 ## Cómo actualizar esta bitácora
 

@@ -1,0 +1,8 @@
+id: dwes
+title: DWES
+
+books:
+  - id: ut03-mvc
+    path: books/ut03-mvc
+  - id: ut03-mvc
+    path: books/ut03-mvc

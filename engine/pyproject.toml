@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }
 dependencies = [
+    "markdown-it-py>=3.0",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
     "typer>=0.12",
 ]
 
@@ -23,6 +25,7 @@ dev = [
     "mypy>=1.10",
     "pytest>=8.2",
     "ruff>=0.5",
+    "types-PyYAML>=6.0",
 ]
 
 [tool.hatch.build.targets.wheel]
