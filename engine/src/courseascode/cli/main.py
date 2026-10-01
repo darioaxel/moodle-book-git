@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from courseascode.git.worktree import WorktreeError, temporary_checkout
+from courseascode.git import GitProviderError, LocalGitProvider
 from courseascode.manifests.validator import Validator
 
 app = typer.Typer(
@@ -38,9 +38,10 @@ def validate(
     root = Path(path).resolve()
     if ref is not None:
         try:
-            with temporary_checkout(root, ref) as checkout:
+            provider = LocalGitProvider(root)
+            with provider.checkout_ref(ref) as checkout:
                 report = Validator().validate(checkout)
-        except WorktreeError as exc:
+        except GitProviderError as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(code=2) from exc
     else:

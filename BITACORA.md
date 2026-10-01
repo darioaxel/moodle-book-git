@@ -16,11 +16,11 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 1 — Manifests y validación ✅ (2026-10-01) · **Próximo:** Fase 2 — Git adapter
+**Fase actual:** 2 — Git adapter ✅ (2026-10-01) · **Próximo:** Fase 3 — Content engine (renderer)
 
 | Milestone | Contenido | Estado |
 |---|---|---|
-| M1 (F0–F4) | validate + preview | 🟡 F0–F1 ✅ · F2–F4 ⬜ |
+| M1 (F0–F4) | validate + preview | 🟡 F0–F2 ✅ · F3–F4 ⬜ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -74,12 +74,32 @@ ruff ✓, mypy strict sin errores ✓, 27 tests ✓.
 error específico y exit 1; `--ref` valida el tag y no el working tree (test con
 repo Git temporal). `make check` verde: ruff ✓, mypy strict ✓, **48 tests** ✓.
 
-### FASE 2 — Git adapter — ⬜ pendiente
+### FASE 2 — Git adapter — ✅ completada el 2026-10-01
 
-- [ ] **ENG-020**–**ENG-026**: interfaz `GitProvider`, `LocalGitProvider` (worktrees
-  temporales), `Diff` estructurado, `VersionResolver` (tags `book/<id>/vX.Y.Z`),
-  versión derivada de rama personal (`merge-base` + commits ahead → `1.2.0+juan.3`),
-  detección de fuente, tests con fixture repo.
+- [x] **ENG-020** (M) Interfaz `GitProvider`: `get_ref`, `checkout_ref` (worktree
+  temporal), `list_files`, `get_file`, `get_commit`, `list_tags(pattern)`,
+  `diff`, `merge_base`, `commits_ahead`, `is_ancestor`, `current_branch`.
+- [x] **ENG-021** (M) `LocalGitProvider` (GitPython). Worktrees por `git worktree add`
+  (GitPython no los expone de forma fiable); no muta el working tree del usuario.
+  `git/worktree.py` provisional de ENG-015 migrado y eliminado; el CLI `validate
+  --ref` usa ahora el provider.
+- [x] **ENG-022** (M) `Diff` estructurado: `FileChange` (added/modified/deleted/renamed)
+  y `BookDiff` con clasificación capítulo/asset (`diff.for_book(...)`) para el
+  resumen "+ Nuevo capítulo: Observer" (§22).
+- [x] **ENG-023** (M) `VersionResolver`: tags `book/<id>/vX.Y.Z`, ordenación semver,
+  `latest()`; tags malformados se ignoran.
+- [x] **ENG-024** (M) Versión derivada de rama personal: tag base (ancestro del
+  merge-base con `main`) + `commits ahead` → `1.2.0+juan.3`; sin tags base →
+  `0.0.0+<source>.<ahead>`.
+- [x] **ENG-025** (S) `detect_source(provider)` → rama actual (en `main`, línea oficial;
+  el namespace `@dwes` es configuración de presentación).
+- [x] **ENG-026** (M) Fixture Git construido en `tests/conftest.py` (`git_repo`):
+  3 tags oficiales de ut03-mvc + tag de ut04-dao, rama `juan` con 3 commits
+  propios, main avanza en paralelo, book sin tags (ut05).
+
+**DoD Fase 2 — verificado (2026-10-01):** `VersionResolver` resuelve `ut03-mvc →
+v1.2.0` en `main` y `1.2.0+juan.3` en la rama `juan` con 3 commits propios ✓.
+`make check` verde: ruff ✓, mypy strict ✓, **69 tests** ✓. Dep añadida: GitPython.
 
 ### FASE 3 — Content engine (renderer) — ⬜ pendiente
 
@@ -163,6 +183,21 @@ repo Git temporal). `make check` verde: ruff ✓, mypy strict ✓, **48 tests** 
 - **Pendiente para la próxima sesión:** Fase 2 (ENG-020–026). Prerequisitos:
   añadir `GitPython` al `pyproject.toml`; al formalizar `GitProvider`, migrar
   `git/worktree.py` (ENG-015) a la interfaz nueva.
+
+### 2026-10-01 — Sesión 3: Fase 2 completa (Git adapter)
+
+- **ENG-020 a ENG-026 implementados**: interfaz `GitProvider` (10 operaciones),
+  `LocalGitProvider` (GitPython + worktrees por CLI), `Diff`/`BookDiff`
+  clasificado, `VersionResolver` (tags y versión derivada `1.2.0+juan.3`),
+  `detect_source`, fixture Git en `tests/conftest.py` y 21 tests nuevos.
+- Migrado el worktree provisional de ENG-015 al provider (el CLI `validate --ref`
+  ya no usa `git/worktree.py`, eliminado).
+- Dep añadida: `GitPython>=3.1.43`.
+- **DoD verificado**: rama `juan` → `1.2.0+juan.3` (3 commits propios); `main` →
+  `1.2.0+main.0`. `make check` verde: ruff ✓, mypy strict ✓, **69 tests** ✓.
+- **Pendiente para la próxima sesión:** Fase 3 (ENG-030–037, renderer). Prerequisitos:
+  añadir `Pygments`, `Jinja2` y `bleach` (o allowlist propia) al `pyproject.toml`.
+  Tareas de mayor riesgo según tasklist: ENG-034 (link resolver) y ENG-035 (asset resolver).
 
 ## Cómo actualizar esta bitácora
 

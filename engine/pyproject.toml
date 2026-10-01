@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }
 dependencies = [
+    "GitPython>=3.1.43",
     "markdown-it-py>=3.0",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
