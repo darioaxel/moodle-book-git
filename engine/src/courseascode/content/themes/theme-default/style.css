@@ -1,0 +1,142 @@
+/* theme-default — tema base del renderer (ENG-033).
+   El Markdown nunca contiene clases del tema: todo el estilo se aplica aquí
+   sobre el HTML semántico. */
+
+:root {
+  --cc-text: #1f2933;
+  --cc-muted: #52606d;
+  --cc-border: #d9e2ec;
+  --cc-code-bg: #f5f7fa;
+  --cc-note: #0967d2;
+  --cc-warning: #b7791f;
+  --cc-tip: #0f9d58;
+  --cc-important: #c0392b;
+}
+
+.courseascode {
+  color: var(--cc-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+}
+
+.courseascode h1,
+.courseascode h2,
+.courseascode h3,
+.courseascode h4,
+.courseascode h5,
+.courseascode h6 {
+  line-height: 1.25;
+  margin: 1.6em 0 0.5em;
+}
+
+.courseascode h1 { font-size: 1.9rem; }
+.courseascode h2 { font-size: 1.5rem; border-bottom: 1px solid var(--cc-border); padding-bottom: 0.2em; }
+.courseascode h3 { font-size: 1.25rem; }
+
+.courseascode a { color: var(--cc-note); }
+.courseascode a:hover { text-decoration: underline; }
+
+.courseascode blockquote {
+  border-left: 4px solid var(--cc-border);
+  color: var(--cc-muted);
+  margin: 1em 0;
+  padding: 0.1em 1em;
+}
+
+.courseascode code {
+  background: var(--cc-code-bg);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0.15em 0.35em;
+}
+
+.courseascode pre {
+  background: var(--cc-code-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: 6px;
+  overflow-x: auto;
+  padding: 0.85em 1em;
+}
+
+.courseascode pre code {
+  background: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.courseascode table {
+  border-collapse: collapse;
+  display: block;
+  margin: 1em 0;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.courseascode th,
+.courseascode td {
+  border: 1px solid var(--cc-border);
+  padding: 0.4em 0.8em;
+  text-align: left;
+}
+
+.courseascode th { background: var(--cc-code-bg); }
+
+.courseascode img {
+  height: auto;
+  max-width: 100%;
+}
+
+.courseascode hr {
+  border: none;
+  border-top: 1px solid var(--cc-border);
+  margin: 2em 0;
+}
+
+/* Admonitions (:::note, :::warning, :::tip, :::important) */
+.courseascode .admonition {
+  border-left: 4px solid var(--cc-muted);
+  border-radius: 0 6px 6px 0;
+  background: var(--cc-code-bg);
+  margin: 1em 0;
+  padding: 0.5em 1em;
+}
+
+.courseascode .admonition-title {
+  font-weight: 600;
+  margin: 0 0 0.25em;
+}
+
+.courseascode .admonition-note { border-left-color: var(--cc-note); }
+.courseascode .admonition-note .admonition-title { color: var(--cc-note); }
+.courseascode .admonition-warning { border-left-color: var(--cc-warning); }
+.courseascode .admonition-warning .admonition-title { color: var(--cc-warning); }
+.courseascode .admonition-tip { border-left-color: var(--cc-tip); }
+.courseascode .admonition-tip .admonition-title { color: var(--cc-tip); }
+.courseascode .admonition-important { border-left-color: var(--cc-important); }
+.courseascode .admonition-important .admonition-title { color: var(--cc-important); }
+
+/* Estructura de la página de preview */
+.courseascode .toc {
+  border-right: 1px solid var(--cc-border);
+  font-size: 0.95rem;
+  list-style: none;
+  margin: 0;
+  padding: 1rem;
+}
+
+.courseascode .toc a { color: var(--cc-text); text-decoration: none; }
+.courseascode .toc a:hover { color: var(--cc-note); }
+.courseascode .toc .toc-current a { color: var(--cc-note); font-weight: 600; }
+
+.courseascode .preview-layout {
+  display: flex;
+  gap: 2rem;
+  margin: 0 auto;
+  max-width: 72rem;
+  padding: 0 1rem;
+}

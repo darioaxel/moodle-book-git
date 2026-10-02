@@ -16,11 +16,11 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 2 — Git adapter ✅ (2026-10-01) · **Próximo:** Fase 3 — Content engine (renderer)
+**Fase actual:** 3 — Content engine ✅ (2026-10-02) · **Próximo:** Fase 4 — Preview web
 
 | Milestone | Contenido | Estado |
 |---|---|---|
-| M1 (F0–F4) | validate + preview | 🟡 F0–F2 ✅ · F3–F4 ⬜ |
+| M1 (F0–F4) | validate + preview | 🟡 F0–F3 ✅ · F4 ⬜ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -101,11 +101,37 @@ repo Git temporal). `make check` verde: ruff ✓, mypy strict ✓, **48 tests** 
 v1.2.0` en `main` y `1.2.0+juan.3` en la rama `juan` con 3 commits propios ✓.
 `make check` verde: ruff ✓, mypy strict ✓, **69 tests** ✓. Dep añadida: GitPython.
 
-### FASE 3 — Content engine (renderer) — ⬜ pendiente
+### FASE 3 — Content engine (renderer) — ✅ completada el 2026-10-02
 
-- [ ] **ENG-030**–**ENG-037**: pipeline markdown-it-py (CommonMark + tablas + `container`),
-  Pygments inline (`noclasses=True`), sanitización con lista blanca, temas Jinja2,
-  link resolver + asset resolver con adapters, `render_book(...)` y tests golden-file.
+- [x] **ENG-030** (M) Pipeline Markdown único: preset gfm-like (CommonMark + tablas
+  + tachado) + admonitions `:::note|warning|tip|important` vía plugin container
+  (marcador `":"`; el plugin exige 3 repeticiones de la cadena de marcador).
+- [x] **ENG-031** (M) Pygments con `noclasses=True` (estilos inline) como callback
+  `highlight`; lenguaje desconocido → fallback a escape plano. Nota: el PhpLexer
+  solo resalta dentro de `<?php ... ?>`.
+- [x] **ENG-032** (M) Sanitización con bleach: lista blanca de tags/atributos,
+  sin `on*` ni `javascript:`, y CSSSanitizer (tinycss2) que solo admite las
+  propiedades que emite Pygments.
+- [x] **ENG-033** (L) Sistema de temas: `theme-default` empaquetado (style.css +
+  preview.html Jinja2) cargado con importlib.resources; `render_preview_page` y
+  `wrap_fragment` (inyección en Moodle).
+- [x] **ENG-034** (L) Link resolver: `03-model.md` → `ChapterRef` → `LinkAdapter`
+  (`PreviewLinkAdapter`, `MoodleLinkAdapter` con placeholder `#chapter-<id>` para
+  ENG-072); anclas `#seccion` preservadas; reescritura sobre el HTML con HTMLParser.
+- [x] **ENG-035** (L) Asset resolver: recolecta `assets/...` referenciados (más
+  cover), los devuelve en `RenderedBook.assets` y reescribe URLs vía `AssetAdapter`
+  (`PreviewAssetAdapter`, `MoodleAssetAdapter` con placeholder `pluginfile://`).
+- [x] **ENG-036** (M) API `render_book(book_dir, book, link_adapter, asset_adapter)`
+  → `RenderedBook` (HTML por capítulo sanitizado + assets). `render_book_preview`
+  como atajo. El `ref` se resuelve fuera (checkout aislado).
+- [x] **ENG-037** (L) Tests golden-file: corpus `tests/fixtures/golden/components.md`
+  con todos los componentes de §14.1 → `components.html` comparado byte a byte.
+
+**DoD Fase 3 — verificado (2026-10-02):** el corpus renderiza todos los componentes
+con estilo; el mismo `render_book` produce URLs de preview o de Moodle según el
+adapter sin tocar el renderer. Deps añadidas: pygments, jinja2, bleach, tinycss2,
+mdit-py-plugins, types-Pygments. `make check` verde: ruff ✓, mypy strict ✓,
+**88 tests** ✓.
 
 ### FASE 4 — Preview web — ⬜ pendiente
 
@@ -198,6 +224,24 @@ v1.2.0` en `main` y `1.2.0+juan.3` en la rama `juan` con 3 commits propios ✓.
 - **Pendiente para la próxima sesión:** Fase 3 (ENG-030–037, renderer). Prerequisitos:
   añadir `Pygments`, `Jinja2` y `bleach` (o allowlist propia) al `pyproject.toml`.
   Tareas de mayor riesgo según tasklist: ENG-034 (link resolver) y ENG-035 (asset resolver).
+
+### 2026-10-02 — Sesión 4: Fase 3 completa (content engine / renderer)
+
+- **ENG-030 a ENG-037 implementados**: pipeline Markdown único (gfm-like +
+  admonitions `:::` + Pygments inline), sanitización bleach con CSSSanitizer,
+  tema `theme-default` (CSS + plantilla Jinja2), link/asset resolvers con
+  adapters preview/Moodle, API `render_book` y tests golden-file
+  (`tests/fixtures/golden/components.{md,html}`).
+- Decisiones y hallazgos: el plugin container de mdit-py-plugins exige el
+  marcador `":"` (3 repeticiones = `:::`); el PhpLexer solo resalta dentro de
+  `<?php`; linkify desactivado (evita dep linkify-it-py); overrides mypy para
+  bleach/mdit_py_plugins; deps nuevas: pygments, jinja2, bleach, tinycss2,
+  mdit-py-plugins, types-Pygments.
+- **DoD verificado**: corpus completo renderizado; mismos adapters cambian URLs
+  sin tocar el renderer. `make check` verde: ruff ✓, mypy strict ✓, **88 tests** ✓.
+- **Pendiente para la próxima sesión:** Fase 4 (ENG-040–044): app FastAPI de
+  preview, comando `preview` con watch y endpoint público para el plugin.
+  Prerequisito: añadir `fastapi` + `uvicorn` al pyproject.
 
 ## Cómo actualizar esta bitácora
 

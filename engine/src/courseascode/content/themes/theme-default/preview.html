@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ book_title }} — {{ chapter_title }}</title>
+  <style>
+{{ css }}
+  </style>
+</head>
+<body>
+  <div class="preview-layout">
+    <nav>
+      <ul class="toc">
+{% for item in toc %}
+        <li{% if item.current %} class="toc-current"{% endif %}><a href="{{ item.url }}">{{ item.title }}</a></li>
+{% endfor %}
+      </ul>
+    </nav>
+    <main class="courseascode theme-{{ theme_name }}">
+      <article class="chapter">
+{{ content }}
+      </article>
+    </main>
+  </div>
+</body>
+</html>
