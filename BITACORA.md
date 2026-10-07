@@ -16,11 +16,12 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 4 — Preview web ✅ (2026-10-07) · **Próximo:** Fase 5 — Catálogo
+**Fase actual:** 5 — Catálogo ✅ (2026-10-07) · **Próximo:** Fase 6 — Moodle adapter
 
 | Milestone | Contenido | Estado |
 |---|---|---|
 | M1 (F0–F4) | validate + preview | ✅ |
+| M2 (F5–F6) | catálogo + adapter Moodle | 🟡 F5 ✅ · F6 ⬜ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -159,11 +160,36 @@ sin reiniciar. Deps añadidas: fastapi, uvicorn (httpx en dev para `TestClient`)
 `make check` verde: ruff ✓, mypy strict ✓, **113 tests** ✓ (25 nuevos en
 `tests/test_web_preview.py`).
 
-### FASE 5 — Catálogo — ⬜ pendiente
+### FASE 5 — Catálogo — ✅ completada el 2026-10-07
 
-- [ ] **ENG-050**–**ENG-054**: `CatalogBuilder` (deriva del último tag; solo tags,
-  nunca HEAD), `SourceRegistry` con ACL, endpoints `GET /catalog` y
-  `GET /catalog/{source}/{book}/versions`, comandos `info` y `build`.
+- [x] **ENG-050** (M) `CatalogBuilder` (`catalog/builder.py`): modelos pydantic en
+  `catalog/models.py` (`Catalog`, `CatalogEntry` con summary/tags/audience/cover/
+  chapter_count/versions/latest, `CatalogVersion`). La lista de books se lee del
+  `course.yml` del working tree; los metadatos y el nº de capítulos siempre del
+  `book.yml` del último tag (checkout aislado por book).
+- [x] **ENG-051** (S) Solo versiones taggeadas: `ut05-sin-tags` se omite aunque
+  esté en `course.yml`; un capítulo añadido solo al working tree no cambia el
+  `chapter_count` (test que lo demuestra).
+- [x] **ENG-052** (M) `SourceRegistry` (`catalog/registry.py`): `Source` con
+  propietario y visibilidad (`equipo | privada`); ACL `list_visible(caller)`;
+  `default()` con la fuente oficial de Beta (`dwes/coordinacion/equipo`).
+- [x] **ENG-053** (M) Endpoints en la app de `web/app.py`: `GET /catalog` (JSON
+  de fuentes visibles para el llamante, header opcional `X-CourseAsCode-User`,
+  auth real 🔌) y `GET /catalog/{source}/{book}/versions`. Sin repo Git → 503;
+  fuente inválida/no visible → 404. `api/` queda reservado para ENG-079/093.
+- [x] **ENG-054** (S) `courseascode info <book>` (formato §29: ID con namespace
+  `@dwes`, Title, Type, Chapters, Assets, Git commit, Tags) y `build <book>`
+  (render a `<root>/build/<id>/`: index + `<capítulo>.html` con el tema y assets
+  copiados, mismo renderer — principio 5).
+
+**DoD Fase 5 — verificado (2026-10-07):** `GET /catalog` devuelve el JSON del
+fixture con versiones ordenadas asc por SemVer y metadatos completos (test
+explícito). Smoke test real: `info` idéntico al formato de §29 y `build`
+genera 6 HTML + 2 assets. `make check` verde: ruff ✓, mypy strict ✓,
+**140 tests** ✓ (27 nuevos: `test_catalog.py`, `test_api_catalog.py`,
+`test_cli_info_build.py`). Sin deps nuevas.
+
+### FASE 6 — Moodle adapter — ⬜ pendiente
 
 ### FASE 6 — Moodle adapter — ⬜ pendiente
 
@@ -203,6 +229,26 @@ sin reiniciar. Deps añadidas: fastapi, uvicorn (httpx en dev para `TestClient`)
 **Hito crítico:** tabla + `upsert_book/chapter` + token listos **antes de terminar F6**.
 
 ## Registro de sesiones
+
+### 2026-10-07 — Sesión 6: Fase 5 completa (catálogo)
+
+- **ENG-050 a ENG-054 implementados**: `CatalogBuilder` + modelos pydantic,
+  `SourceRegistry` con ACL, endpoints `GET /catalog` y
+  `/catalog/{source}/{book}/versions` en la app FastAPI (header opcional
+  `X-CourseAsCode-User`; auth real pendiente del plugin 🔌) y comandos CLI
+  `info` (formato §29) y `build` (render a disco con tema, principio 5).
+- Decisiones: lista de books del `course.yml` del working tree; metadatos y
+  capítulos siempre del último tag; versiones ordenadas asc con `latest`
+  explícito; namespace `@dwes` = fuente oficial del registry (presentación).
+- **DoD verificado**: `GET /catalog` con JSON completo y versiones ordenadas;
+  smoke test real de `info`/`build`. `make check` verde: ruff ✓, mypy strict ✓,
+  **140 tests** ✓. Sin deps nuevas.
+- **Pendiente para la próxima sesión:** Fase 6 (ENG-060–064): interfaz
+  `MoodleProvider`, `MoodleRestClient` (httpx), `FakeMoodleProvider` y tests de
+  contrato. Prerequisito: añadir `httpx` a dependencies (ya está en dev) y
+  acordar con el equipo del plugin los 6 contratos `local_courseascode_*` 🔌.
+  **Hito crítico plugin:** tabla + `upsert_book/chapter` + token antes de
+  terminar F6.
 
 ### 2026-10-07 — Sesión 5: Fase 4 completa (preview web)
 

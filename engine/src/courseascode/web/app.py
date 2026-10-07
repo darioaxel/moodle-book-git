@@ -20,7 +20,13 @@ Otras decisiones:
   sirve (ENG-042).
 - ``create_app`` acepta un provider explícito para tests; si no se da,
   intenta ``LocalGitProvider`` y queda ``None`` si el contenido no es un
-  repo Git (entonces ``?ref`` no está disponible y se responde 404 claro).
+  repo Git (entonces ``?ref`` no está disponible y el catálogo responde 503).
+- Los endpoints de catálogo (ENG-053) viven en esta misma app: ``GET
+  /catalog`` (índice filtrado por el ``SourceRegistry`` según el header
+  ``X-CourseAsCode-User``) y ``GET /catalog/{source}/{book}/versions``.
+  Las respuestas JSON salen de los modelos pydantic de ``catalog/`` vía
+  ``model_dump(mode="json")``; los errores usan ``HTTPException`` (JSON
+  ``{"detail": ...}``).
 """
 
 from __future__ import annotations
@@ -32,11 +38,19 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
+from courseascode.catalog import (
+    CatalogBuilder,
+    CatalogEntry,
+    CatalogError,
+    CatalogIndex,
+    SourceRegistry,
+)
 from courseascode.content.links import PreviewAssetAdapter, PreviewLinkAdapter
 from courseascode.content.renderer import RenderedBook, render_book
 from courseascode.content.themes import Theme, TocItem, load_theme
@@ -51,6 +65,9 @@ _DEFAULT_THEME = "theme-default"
 # Temas disponibles en el selector (hoy solo el base; §14 prevé más).
 _AVAILABLE_THEMES: tuple[str, ...] = ("theme-default",)
 _SOURCE_RE = re.compile(r"^[a-z0-9_-]+$")
+# Identidad por defecto de los endpoints de catálogo hasta que llegue la
+# autenticación real con el plugin (ENG-053 🔌).
+_ANON_CALLER = "anon"
 
 
 class _PreviewError(Exception):
@@ -70,6 +87,7 @@ class _PreviewContext:
     provider: GitProvider | None
     default_ref: str | None  # ENG-043: ref fijado por ``courseascode preview --ref``
     default_theme: str
+    registry: SourceRegistry  # ENG-052: fuentes y ACL del catálogo
 
 
 @dataclass(frozen=True)
@@ -88,8 +106,9 @@ def create_app(
     provider: GitProvider | None = None,
     default_ref: str | None = None,
     default_theme: str = _DEFAULT_THEME,
+    registry: SourceRegistry | None = None,
 ) -> FastAPI:
-    """Crea la app de preview sobre ``content_root`` (§13).
+    """Crea la app de preview y catálogo sobre ``content_root`` (§13, §12).
 
     Args:
         content_root: raíz del repo de contenidos (working tree).
@@ -100,6 +119,8 @@ def create_app(
             se indica, todas las páginas renderizan ese ref aunque no llegue
             ``?ref`` en la petición.
         default_theme: tema usado si la petición no trae ``?theme``.
+        registry: fuentes y ACL del catálogo (ENG-052); por defecto el
+            registro de la Beta con la fuente oficial única.
     """
     if provider is None:
         try:
@@ -111,6 +132,7 @@ def create_app(
         provider=provider,
         default_ref=default_ref,
         default_theme=default_theme,
+        registry=registry or SourceRegistry.default(),
     )
 
     app = FastAPI(title="courseascode preview", docs_url=None, redoc_url=None)
@@ -150,6 +172,29 @@ def create_app(
         """Página completa de un capítulo con TOC y selector de ref/tema."""
         return _chapter_page(ctx, book_id, chapter_id, ref, theme_name)
 
+    @app.get("/catalog")
+    def catalog_index(
+        caller: Annotated[str | None, Header(alias="X-CourseAsCode-User")] = None,
+    ) -> JSONResponse:
+        """Catálogo JSON: fuentes visibles para el llamante con sus books (ENG-053).
+
+        🔌 En la Beta no hay autenticación: la identidad llega por el header
+        opcional ``X-CourseAsCode-User`` (por defecto ``anon``) y el filtrado
+        lo aplica ``SourceRegistry.list_visible``; la autenticación real
+        llegará con el plugin Moodle.
+        """
+        return _catalog_index(ctx, caller or _ANON_CALLER)
+
+    @app.get("/catalog/{source}/{book_id}/versions")
+    def catalog_versions(
+        source: str,
+        book_id: str,
+        caller: Annotated[str | None, Header(alias="X-CourseAsCode-User")] = None,
+    ) -> JSONResponse:
+        """Versiones taggeadas ordenadas de un Book en una fuente (ENG-053)."""
+        entry = _catalog_entry(ctx, source, book_id, caller or _ANON_CALLER)
+        return JSONResponse(entry.model_dump(mode="json"))
+
     @app.get("/catalog/{source}/{book_id}/preview", response_class=HTMLResponse)
     def catalog_preview(
         source: str,
@@ -174,6 +219,47 @@ def create_app(
 
 
 # -- helpers internos ---------------------------------------------------------
+
+
+def _require_provider(ctx: _PreviewContext) -> GitProvider:
+    if ctx.provider is None:
+        raise HTTPException(
+            status_code=503, detail="el contenido no es un repositorio Git: catálogo no disponible"
+        )
+    return ctx.provider
+
+
+def _catalog_index(ctx: _PreviewContext, caller: str) -> JSONResponse:
+    """Índice de catálogo: una entrada ``Catalog`` por fuente visible."""
+    provider = _require_provider(ctx)
+    catalogs = []
+    for source in ctx.registry.list_visible(caller):
+        try:
+            catalogs.append(
+                CatalogBuilder(provider, course_root=ctx.content_root).build(source.name)
+            )
+        except CatalogError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    index = CatalogIndex(caller=caller, sources=tuple(catalogs))
+    return JSONResponse(index.model_dump(mode="json"))
+
+
+def _catalog_entry(ctx: _PreviewContext, source: str, book_id: str, caller: str) -> CatalogEntry:
+    """Entrada de catálogo de un Book, con ACL de fuente (404 si no es visible)."""
+    if not _SOURCE_RE.match(source):
+        raise HTTPException(status_code=404, detail=f"fuente inválida: {source!r}")
+    if not ctx.registry.is_visible(source, caller):
+        raise HTTPException(status_code=404, detail=f"fuente no encontrada: {source!r}")
+    provider = _require_provider(ctx)
+    try:
+        catalog = CatalogBuilder(provider, course_root=ctx.content_root).build(source)
+    except CatalogError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    entry = next((e for e in catalog.books if e.id == book_id), None)
+    if entry is None:
+        detail = f"book no encontrado en el catálogo: {book_id!r}"
+        raise HTTPException(status_code=404, detail=detail)
+    return entry
 
 
 @contextmanager
@@ -331,7 +417,9 @@ def _catalog_page(ctx: _PreviewContext, request: _CatalogRequest) -> str:
 
     Sin ``?ref`` se resuelve la última versión oficial taggeada del book;
     si no tiene tags, 404. El ``source`` es el namespace de la fuente
-    (validado con ``^[a-z0-9_-]+$``; sin ACL todavía: eso es ENG-052/053).
+    (validado con ``^[a-z0-9_-]+$``). La ACL de fuentes (ENG-052/053) se
+    aplica en los endpoints JSON ``/catalog``; este endpoint de preview no
+    filtra por identidad hasta que llegue la autenticación del plugin.
     """
     if not _SOURCE_RE.match(request.source):
         raise _PreviewError(404, f"fuente inválida: {request.source!r}")
