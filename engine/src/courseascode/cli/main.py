@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import uvicorn
 
 from courseascode.git import GitProviderError, LocalGitProvider
+from courseascode.manifests.errors import ManifestError
+from courseascode.manifests.parser import ManifestParser
 from courseascode.manifests.validator import Validator
+from courseascode.web import create_app
 
 app = typer.Typer(
     name="courseascode",
@@ -58,7 +62,45 @@ def preview(
     port: Annotated[int, typer.Option(help="Puerto del servidor local")] = 3000,
 ) -> None:
     """Servidor de preview local con el tema propio (§13)."""
-    _not_implemented()
+    root = Path.cwd()
+    candidate = Path(book)
+    if candidate.is_dir() and (candidate / "book.yml").is_file():
+        try:
+            book_id = ManifestParser(candidate).parse_book(candidate).id
+        except ManifestError as exc:
+            typer.echo(f"error: book.yml inválido: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+    else:
+        book_id = book
+
+    try:
+        course = ManifestParser(root).parse_course()
+    except ManifestError as exc:
+        typer.echo(f"error: no se puede leer course.yml en {root}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    if not any(b.id == book_id for b in course.books):
+        typer.echo(f"error: el book {book_id!r} no está en course.yml de {root}", err=True)
+        raise typer.Exit(code=2)
+
+    try:
+        provider = LocalGitProvider(root)
+    except GitProviderError:
+        provider = None
+    if ref is not None:
+        if provider is None:
+            typer.echo(f"error: --ref requiere un repositorio Git en {root}", err=True)
+            raise typer.Exit(code=2)
+        try:
+            provider.get_ref(ref)
+        except GitProviderError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+
+    web_app = create_app(root, provider=provider, default_ref=ref)
+    typer.echo(
+        f"Preview de {book_id!r} en http://localhost:{port}/books/{book_id}/ (Ctrl+C para detener)"
+    )
+    uvicorn.run(web_app, host="127.0.0.1", port=port)
 
 
 @app.command()

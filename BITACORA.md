@@ -16,11 +16,11 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 3 — Content engine ✅ (2026-10-02) · **Próximo:** Fase 4 — Preview web
+**Fase actual:** 4 — Preview web ✅ (2026-10-07) · **Próximo:** Fase 5 — Catálogo
 
 | Milestone | Contenido | Estado |
 |---|---|---|
-| M1 (F0–F4) | validate + preview | 🟡 F0–F3 ✅ · F4 ⬜ |
+| M1 (F0–F4) | validate + preview | ✅ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -133,11 +133,31 @@ adapter sin tocar el renderer. Deps añadidas: pygments, jinja2, bleach, tinycss
 mdit-py-plugins, types-Pygments. `make check` verde: ruff ✓, mypy strict ✓,
 **88 tests** ✓.
 
-### FASE 4 — Preview web — ⬜ pendiente
+### FASE 4 — Preview web — ✅ completada el 2026-10-07
 
-- [ ] **ENG-040**–**ENG-044**: app FastAPI de preview, assets locales, adapters,
-  `courseascode preview <book> [--ref] [--port 3000]` con watch, endpoint de preview
-  para el plugin 🔌.
+- [x] **ENG-040** (M) App FastAPI en `web/app.py` (`create_app(content_root, provider,
+  default_ref, default_theme)`): índice de books desde `course.yml`, página de capítulo
+  con TOC (vía `Theme.render_preview_page`) y selector de ref/tema inyectado como bloque
+  HTML sin tocar la firma de `themes.py`.
+- [x] **ENG-041** (S) Assets servidos en `/books/<id>/assets/...` con media type por
+  `mimetypes`, leídos dentro del checkout (el worktree de un `?ref` se elimina al
+  servir) y blindados contra path traversal.
+- [x] **ENG-042** (S) `PreviewLinkAdapter`/`PreviewAssetAdapter` ya existían de Fase 3;
+  cableados con `base_url=/books/<id>` (enlaces) y `/books/<id>/assets` (assets).
+- [x] **ENG-043** (S) `courseascode preview <book> [--ref] [--port 3000]` operativo
+  (resolución por ruta de directorio o id en `course.yml`; errores claros con exit 2).
+  **Decisión "watch" documentada**: sin `watchfiles`; al servir el working tree cada
+  petición re-renderiza sin caché → guardar + refrescar basta (cumple el DoD "sin
+  reiniciar nada"). Con `--ref` la app fija ese ref para todas las páginas.
+- [x] **ENG-044** (M) `GET /catalog/{source}/{book}/preview?ref=&chapter=&theme=`:
+  sin `?ref` resuelve la última versión con `VersionResolver.latest()`; `source`
+  validado con `^[a-z0-9_-]+$` (sin ACL todavía: eso es ENG-052/053).
+
+**DoD Fase 4 — verificado (2026-10-07):** smoke test real — `preview` sobre una copia
+del fixture, capítulo + asset (`200 image/png`) servidos, edición en caliente visible
+sin reiniciar. Deps añadidas: fastapi, uvicorn (httpx en dev para `TestClient`).
+`make check` verde: ruff ✓, mypy strict ✓, **113 tests** ✓ (25 nuevos en
+`tests/test_web_preview.py`).
 
 ### FASE 5 — Catálogo — ⬜ pendiente
 
@@ -183,6 +203,27 @@ mdit-py-plugins, types-Pygments. `make check` verde: ruff ✓, mypy strict ✓,
 **Hito crítico:** tabla + `upsert_book/chapter` + token listos **antes de terminar F6**.
 
 ## Registro de sesiones
+
+### 2026-10-07 — Sesión 5: Fase 4 completa (preview web)
+
+- **ENG-040 a ENG-044 implementados**: app FastAPI (`web/app.py`) con índice de
+  books, página de capítulo con TOC + selector de ref/tema, assets servidos
+  blindados contra traversal, comando `preview [--ref] [--port]` y endpoint
+  público `GET /catalog/{source}/{book}/preview?ref=` (latest tag por defecto
+  vía `VersionResolver`).
+- **Decisión clave — watch**: re-render por petición sin caché en vez de
+  `watchfiles`; guardar + refrescar cumple el DoD sin dependencias extra.
+  Documentada en la docstring de `web/app.py` y en la entrada de fase.
+- Incidentes resueltos al verificar: `FileResponse` leía el asset en lazy tras
+  eliminar el worktree del ref (se lee dentro del checkout); un test CLI
+  arrancaba uvicorn real y colgaba la suite (mock añadido).
+- Deps nuevas: fastapi, uvicorn (+ httpx en dev). **M1 (validate + preview) cerrado.**
+- **DoD verificado**: smoke test real con `courseascode preview` (capítulo, asset
+  200, edición en caliente sin reiniciar). `make check` verde: ruff ✓,
+  mypy strict ✓, **113 tests** ✓.
+- **Pendiente para la próxima sesión:** Fase 5 (ENG-050–054): `CatalogBuilder`
+  (del último tag, nunca HEAD), `SourceRegistry` con ACL, endpoints
+  `GET /catalog` y `/catalog/{source}/{book}/versions`, comandos `info` y `build`.
 
 ### 2026-10-01 — Sesión 1: arranque del proyecto
 
