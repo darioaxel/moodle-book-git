@@ -16,12 +16,12 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 5 — Catálogo ✅ (2026-10-07) · **Próximo:** Fase 6 — Moodle adapter
+**Fase actual:** 6 — Moodle adapter ✅ (2026-10-09) · **Próximo:** Fase 7 — Deployment engine
 
 | Milestone | Contenido | Estado |
 |---|---|---|
 | M1 (F0–F4) | validate + preview | ✅ |
-| M2 (F5–F6) | catálogo + adapter Moodle | 🟡 F5 ✅ · F6 ⬜ |
+| M2 (F5–F6) | catálogo + adapter Moodle | ✅ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -191,11 +191,42 @@ genera 6 HTML + 2 assets. `make check` verde: ruff ✓, mypy strict ✓,
 
 ### FASE 6 — Moodle adapter — ⬜ pendiente
 
-### FASE 6 — Moodle adapter — ⬜ pendiente
+### FASE 6 — Moodle adapter — ✅ completada el 2026-10-09
 
-- [ ] **ENG-060**–**ENG-064**: interfaz `MoodleProvider`, `MoodleRestClient` (httpx),
-  mapeo de las 6 funciones `local_courseascode_*` 🔌, `FakeMoodleProvider`,
-  tests de contrato (fake + moodle-docker, mark `integration`).
+- [x] **ENG-060** (M) Interfaz `MoodleProvider` (`moodle/provider.py`, patrón
+  `GitProvider`): `get_course`, `get_deploy`, `upsert_book → bookid`,
+  `upsert_chapter`, `delete_chapter`, `upload_asset → URL pluginfile`,
+  `register_deploy`, `list_deploys`. `MoodleError` con mensaje accionable
+  (`wsfunction: errorcode (exception): mensaje`). `DeployRecord` (fila de
+  `local_courseascode_deploy`) y `MoodleCourse` viven en el módulo `moodle/`
+  (no en `domain/`, que sigue sin importar hacia fuera).
+- [x] **ENG-061** (M) `MoodleRestClient` (httpx): POST a
+  `/webservice/rest/server.php` con `wstoken`/`wsfunction`/
+  `moodlewsrestformat=json`; cliente inyectable (`MockTransport` en tests);
+  `RetryPolicy` (3 intentos, backoff 0.2/0.5/1.0) **solo ante fallos de red**
+  (`TransportError`); error Moodle → `MoodleError` sin reintento.
+- [x] **ENG-062** (M) `moodle/functions.py`: `PLUGIN_FUNCTIONS`, fuente de
+  verdad del contrato con payloads/respuestas documentados para el equipo del
+  plugin. Asunciones anotadas ahí: `get_deploy` recibe también `source` (la
+  tabla clave por `(courseid, source, content_id)`); 7ª función asumida
+  `local_courseascode_list_deploys`; assets en base64; `deployed_at` ISO 8601;
+  `core_course_get_courses` para `get_course`.
+- [x] **ENG-063** (L) `FakeMoodleProvider` en memoria: books idempotentes por
+  `(courseid, name)`, capítulos por stable id ordenados por `position`, assets
+  con URL `pluginfile://<bookid>/<filename>`, tabla de deploys con historio;
+  validaciones del contrato → `MoodleError`. Determinista, sin red ni reloj.
+- [x] **ENG-064** (M) Tests de contrato parametrizados fake (siempre) / Moodle
+  real (mark `integration`, skip sin `MOODLE_URL`/`MOODLE_TOKEN`); unitarios
+  REST con `MockTransport` (protocolo, errores, retries). `httpx` movido a
+  dependencies; marker `integration` registrado; `make test-integration` nuevo;
+  pin de ruff en pre-commit alineado a la versión del venv (0.16.9).
+
+**DoD Fase 6 — verificado (2026-10-09):** la suite de contrato corre contra el
+fake (10 tests) y colecciona/skipea los de integración contra moodle-docker
+(`pytest -m integration`: 10 skipped). `make check` verde: ruff ✓,
+mypy strict ✓, **168 tests** ✓ (28 nuevos) + 10 skipped de integración.
+
+### FASE 7 — Deployment engine — ⬜ pendiente
 
 ### FASE 7 — Deployment engine — ⬜ pendiente
 
@@ -229,6 +260,27 @@ genera 6 HTML + 2 assets. `make check` verde: ruff ✓, mypy strict ✓,
 **Hito crítico:** tabla + `upsert_book/chapter` + token listos **antes de terminar F6**.
 
 ## Registro de sesiones
+
+### 2026-10-09 — Sesión 7: Fase 6 completa (Moodle adapter)
+
+- **ENG-060 a ENG-064 implementados**: `MoodleProvider` (ABC), `MoodleRestClient`
+  (httpx, retries con backoff solo en red), `PLUGIN_FUNCTIONS` como fuente de
+  verdad del contrato con el plugin 🔌, `FakeMoodleProvider` determinista y
+  tests de contrato parametrizados fake/Moodle real (mark `integration`).
+- Decisiones: `DeployRecord` y `MoodleCourse` en `moodle/` (no en `domain/`);
+  cliente httpx inyectable; `RetryPolicy` desactivable en tests; asunciones del
+  contrato documentadas en `functions.py` (`get_deploy` con `source`, 7ª
+  función `list_deploys`, assets base64, `deployed_at` ISO 8601).
+- Tooling: `httpx` a dependencies; marker `integration` registrado con target
+  `make test-integration`; pin de ruff en pre-commit alineado al venv.
+- **DoD verificado**: contrato corre contra fake; integración colecciona y
+  skipea sin Moodle. `make check` verde: ruff ✓, mypy strict ✓, **168 tests** ✓
+  (+10 skipped). **M2 (catálogo + adapter) cerrado.**
+- **Pendiente para la próxima sesión:** Fase 7 (ENG-070–080): `Planner`
+  (diff → plan CREATE/UPDATE/DELETE/UPLOAD), assets en dos pasadas, `Executor`
+  idempotente con `content_hash`, estados, comandos `deploy`/`status`,
+  endpoints `/deploy`… y tests E2E contra el fake. Es la fase más larga del
+  proyecto junto a F3 — vigilar especialmente ENG-072 (dos pasadas).
 
 ### 2026-10-07 — Sesión 6: Fase 5 completa (catálogo)
 
