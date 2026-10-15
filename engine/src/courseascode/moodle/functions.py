@@ -120,4 +120,33 @@ PLUGIN_FUNCTIONS: dict[str, PluginFunction] = {
         params="courseid=int",
         returns="Lista de filas de la tabla, más reciente primero",
     ),
+    "get_book": PluginFunction(
+        name="local_courseascode_get_book",
+        summary=(
+            "Estado actual del Book Moodle: metadatos, capítulos y assets."
+            " 8ª función asumida respecto a §5.3b (ENG-074): el planner"
+            " compara el objetivo con este estado y la detección de drift"
+            " (§19.1) con el HTML actual de cada capítulo."
+        ),
+        params="bookid=int",
+        returns=(
+            "{'bookid': int, 'courseid': int, 'name': str, 'intro': str,"
+            " 'numbering': str, 'assets': [{'filename': str, 'sha256': str}],"
+            " 'chapters': [{'stable_id': str, 'title': str, 'content_html': str,"
+            " 'position': int, 'url': str}]} — url = URL de vista del capítulo"
+            " (la usa el engine para resolver enlaces internos, §16)."
+            " null si el bookid no existe."
+        ),
+    ),
+    "where_deployed": PluginFunction(
+        name="local_courseascode_where_deployed",
+        summary=(
+            "Consulta inversa de despliegues (ENG-079): cursos cuyo despliegue"
+            " actual de (source, content_id) es la versión dada. 9ª función"
+            " asumida: el plugin la resuelve con SQL sobre su tabla; el engine"
+            " no puede replicarla sin un listado global de cursos."
+        ),
+        params="source=string, content_id=string, version=string",
+        returns="{'courseids': [int]}",
+    ),
 }

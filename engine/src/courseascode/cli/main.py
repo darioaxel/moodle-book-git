@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from html import escape
 from pathlib import Path
@@ -13,11 +14,18 @@ import uvicorn
 from courseascode.catalog import SourceRegistry
 from courseascode.content.renderer import render_book_preview
 from courseascode.content.themes import TocItem, load_theme
+from courseascode.deployment import (
+    DeploymentService,
+    DeploymentServiceError,
+    RecalledVersionError,
+)
+from courseascode.domain.identity import ContentId
 from courseascode.git import GitProviderError, LocalGitProvider, VersionResolver
 from courseascode.manifests.errors import ManifestError
 from courseascode.manifests.models import BookManifest
 from courseascode.manifests.parser import ManifestParser
 from courseascode.manifests.validator import Validator
+from courseascode.moodle import MoodleError, MoodleRestClient
 from courseascode.web import create_app
 
 app = typer.Typer(
@@ -35,6 +43,22 @@ def _not_implemented() -> None:
     """Placeholder de Fase 0: los comandos se implementan por fases."""
     typer.echo("not implemented yet", err=True)
     raise typer.Exit(code=1)
+
+
+def _moodle_from_env() -> MoodleRestClient:
+    """Cliente Moodle para los comandos que hablan con la plataforma.
+
+    Lee solo ``MOODLE_URL``/``MOODLE_TOKEN``: el contenido se publica desde
+    el repo local (cwd), así que ``CONTENT_REPO_URL``/``CONTENT_REPO_KEY``
+    (config del servicio web, §25) no aplican aquí. Fallo claro (exit 2) si
+    faltan.
+    """
+    url = os.environ.get("MOODLE_URL")
+    token = os.environ.get("MOODLE_TOKEN")
+    if not url or not token:
+        typer.echo("error: define MOODLE_URL y MOODLE_TOKEN para hablar con Moodle", err=True)
+        raise typer.Exit(code=2)
+    return MoodleRestClient(url.rstrip("/"), token)
 
 
 def _resolve_book(root: Path, book: str) -> tuple[Path, BookManifest]:
@@ -213,23 +237,127 @@ def build(book: Annotated[str, typer.Argument(help="Ruta o ContentId del Book")]
 
 
 @app.command()
-def deploy(
-    course: Annotated[str | None, typer.Option(help="Curso Moodle (idnumber o courseid)")] = None,
+def deploy(  # noqa: PLR0913, PLR0917 - comando Typer: una opción por flag (§29)
+    course: Annotated[str | None, typer.Option(help="ID del curso Moodle (courseid)")] = None,
     book: Annotated[str | None, typer.Option(help="ContentId, p. ej. @dwes/ut03-mvc")] = None,
-    version: Annotated[str | None, typer.Option(help="Versión a desplegar")] = None,
+    version: Annotated[
+        str | None, typer.Option(help="Versión a desplegar (rollback si es anterior, §18)")
+    ] = None,
     ref: Annotated[
         str | None, typer.Option(help="Tag, rama o commit (alternativa a --version)")
     ] = None,
     yes: Annotated[bool, typer.Option("--yes", help="No pedir confirmación (CI/CD)")] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Permite desplegar versiones RECALLED (§18)")
+    ] = False,
 ) -> None:
-    """Publica o sincroniza un Book con Moodle (§17)."""
-    _not_implemented()
+    """Publica o sincroniza un Book con Moodle (§17): plan, confirmación, ejecución."""
+    if course is None or book is None:
+        typer.echo("error: --course y --book son obligatorios", err=True)
+        raise typer.Exit(code=2)
+    try:
+        course_id = int(course)
+    except ValueError:
+        typer.echo(f"error: --course debe ser un ID numérico de curso: {course!r}", err=True)
+        raise typer.Exit(code=2) from None
+    try:
+        content = ContentId.parse(book)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    root = Path.cwd()
+    try:
+        provider = LocalGitProvider(root)
+    except GitProviderError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    service = DeploymentService(provider, _moodle_from_env(), source=content.source)
+
+    try:
+        plan = service.plan(course_id, content.id, version=version, ref=ref, force=force)
+    except RecalledVersionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except (DeploymentServiceError, GitProviderError, MoodleError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(plan.summary())
+    typer.echo("")
+
+    deletions_confirmed = False
+    if plan.has_deletions and not yes:
+        # §17.2: las eliminaciones piden confirmación aparte.
+        deletions_confirmed = typer.confirm(
+            "Este despliegue elimina capítulos del Book Moodle. ¿Continuar?", default=False
+        )
+        if not deletions_confirmed:
+            typer.echo("Despliegue cancelado.")
+            raise typer.Exit(code=0)
+    if plan.actions and not yes and not typer.confirm("Continue?", default=True):
+        typer.echo("Despliegue cancelado.")
+        raise typer.Exit(code=0)
+    if not plan.actions:
+        typer.echo("Nothing to deploy: el Book ya está sincronizado con el objetivo.")
+        return
+
+    result = service.deploy(
+        course_id,
+        content.id,
+        version=version,
+        ref=ref,
+        assume_yes=yes,
+        confirmed_deletions=deletions_confirmed,
+        force=force,
+        deployed_by="cli",
+    )
+    typer.echo(result.message)
+    for warning in result.warnings:
+        typer.echo(f"⚠ {warning}")
 
 
 @app.command()
-def status(course: Annotated[str | None, typer.Option(help="Curso Moodle")] = None) -> None:
-    """Muestra el estado de despliegue de cada Book (§19, §23)."""
-    _not_implemented()
+def status(
+    course: Annotated[str | None, typer.Option(help="ID del curso Moodle (courseid)")] = None,
+) -> None:
+    """Muestra el estado de despliegue de cada Book (§19, §23).
+
+    Limitación (ENG-078): el provider Moodle no ofrece un listado global de
+    cursos, así que ``--course`` es obligatorio en la práctica; dentro del
+    curso se listan todas las claves ``(source, book)`` con despliegues.
+    """
+    if course is None:
+        typer.echo(
+            "error: --course es obligatorio: el provider no lista cursos globalmente (ENG-078)",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    try:
+        course_id = int(course)
+    except ValueError:
+        typer.echo(f"error: --course debe ser un ID numérico de curso: {course!r}", err=True)
+        raise typer.Exit(code=2) from None
+
+    root = Path.cwd()
+    try:
+        provider = LocalGitProvider(root)
+    except GitProviderError:
+        provider = None  # sin repo Git no hay "última versión": solo drift/up-to-date
+    service = DeploymentService(provider, _moodle_from_env())
+    rows = service.course_status(course_id)
+    if not rows:
+        typer.echo(f"El curso {course_id} no tiene despliegues registrados.")
+        return
+    typer.echo(f"{'Book':<28} {'Version':<10} {'State':<18} {'Severity':<10} Commit")
+    for row in rows:
+        info = row.state
+        severity = info.severity.value if info.severity else "-"
+        version = f"{info.version}" if info.version is not None else "-"
+        commit = (info.git_commit or "-")[:7]
+        typer.echo(
+            f"{row.content!s:<28} {version:<10} {info.state.value:<18} {severity:<10} {commit}"
+        )
 
 
 @app.command()

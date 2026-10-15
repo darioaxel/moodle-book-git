@@ -32,6 +32,8 @@ from courseascode.moodle.provider import (
     MoodleCourse,
     MoodleError,
     MoodleProvider,
+    RemoteBook,
+    RemoteChapter,
 )
 
 DEFAULT_RETRIES = 3
@@ -213,6 +215,49 @@ class MoodleRestClient(MoodleProvider):
             msg = f"{ws}: respuesta inesperada (se esperaba lista): {data!r}"
             raise MoodleError(msg)
         return [DeployRecord.model_validate(item) for item in data]
+
+    def get_book(self, bookid: int) -> RemoteBook | None:
+        """Estado actual del Book: metadatos, capítulos y assets (ENG-074)."""
+        ws = PLUGIN_FUNCTIONS["get_book"].name
+        data = self._call(ws, bookid=bookid)
+        if data in (None, {}, []):
+            return None
+        if not isinstance(data, dict):
+            msg = f"{ws}: respuesta inesperada (se esperaba objeto): {data!r}"
+            raise MoodleError(msg)
+        try:
+            chapters = {
+                str(item["stable_id"]): RemoteChapter(
+                    title=str(item["title"]),
+                    html=str(item["content_html"]),
+                    position=int(item["position"]),
+                    url=str(item["url"]),
+                )
+                for item in data.get("chapters", [])
+            }
+            assets = {str(item["filename"]): str(item["sha256"]) for item in data.get("assets", [])}
+            return RemoteBook(
+                bookid=int(data["bookid"]),
+                courseid=int(data["courseid"]),
+                name=str(data["name"]),
+                intro=str(data.get("intro", "")),
+                numbering=Numbering(str(data.get("numbering", "numbers"))),
+                chapters=chapters,
+                assets=assets,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            msg = f"{ws}: respuesta inesperada (falta campo o tipo incorrecto): {exc}"
+            raise MoodleError(msg) from exc
+
+    def where_deployed(self, source: str, content_id: str, version: str) -> list[int]:
+        """Cursos con ``version`` como despliegue actual de ``(source, content_id)``."""
+        ws = PLUGIN_FUNCTIONS["where_deployed"].name
+        data = self._call(ws, source=source, content_id=content_id, version=version)
+        courseids = data.get("courseids", []) if isinstance(data, dict) else data
+        if not isinstance(courseids, list):
+            msg = f"{ws}: respuesta inesperada (se esperaba lista): {data!r}"
+            raise MoodleError(msg)
+        return [int(item) for item in courseids]
 
     @staticmethod
     def _require_int(wsfunction: str, data: Any, key: str) -> int:

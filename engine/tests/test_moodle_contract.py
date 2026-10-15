@@ -119,7 +119,9 @@ class TestContratoMoodle:
         moodle.upsert_chapter(bookid, "mvc", "MVC", "<h1>MVC v2</h1>", 2)
         if isinstance(moodle, FakeMoodleProvider):
             assert moodle.chapter_titles_in_order(bookid) == ["Introducción", "MVC", "Model"]
-            assert moodle.get_book(bookid).chapters["mvc"][1] == "<h1>MVC v2</h1>"
+            book = moodle.get_book(bookid)
+            assert book is not None
+            assert book.chapters["mvc"].html == "<h1>MVC v2</h1>"
 
         url = moodle.upload_asset(bookid, "mvc.svg", b"<svg/>")
         assert url

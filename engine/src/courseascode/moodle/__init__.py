@@ -7,6 +7,8 @@ from courseascode.moodle.provider import (
     MoodleCourse,
     MoodleError,
     MoodleProvider,
+    RemoteBook,
+    RemoteChapter,
 )
 from courseascode.moodle.rest_client import MoodleRestClient, RetryPolicy
 
@@ -19,5 +21,7 @@ __all__ = [
     "MoodleProvider",
     "MoodleRestClient",
     "PluginFunction",
+    "RemoteBook",
+    "RemoteChapter",
     "RetryPolicy",
 ]

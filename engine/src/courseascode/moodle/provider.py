@@ -15,7 +15,14 @@ local_courseascode_delete_chapter(bookid, chapter_stable_id)
 local_courseascode_upload_asset(bookid, filename, data) → pluginfile URL
 local_courseascode_register_deploy(...)   # todos los campos de la tabla
 local_courseascode_get_deploy(courseid, content_id)
+local_courseascode_get_book(bookid) → estado del Book (metadatos, capítulos, assets)
+local_courseascode_where_deployed(source, content_id, version) → courseids
 ```
+
+Las dos últimas son las funciones 8ª y 9ª asumidas respecto a §5.3b
+(ENG-074/ENG-079): la lectura del estado actual del Book (planning, drift) y
+la consulta inversa de despliegues, que el plugin resuelve con una consulta
+SQL sobre su tabla y el engine no puede replicar sin ella.
 
 Los capítulos se identifican por su ``id`` estable del ``book.yml`` (idempotencia,
 §17.3); el Book por ``(courseid, source, content_id)`` en la tabla de despliegues.
@@ -24,6 +31,7 @@ Los capítulos se identifican por su ``id`` estable del ``book.yml`` (idempotenc
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TypedDict
 
@@ -38,6 +46,33 @@ class MoodleCourse(TypedDict):
     id: int
     fullname: str
     shortname: str
+
+
+@dataclass(frozen=True)
+class RemoteChapter:
+    """Capítulo de un Book Moodle, tal como está *ahora* en la plataforma."""
+
+    title: str
+    html: str
+    position: int
+    url: str  # URL de vista del capítulo (resolución de enlaces internos, §16)
+
+
+@dataclass(frozen=True)
+class RemoteBook:
+    """Estado actual de un Book Moodle: metadatos, capítulos (por stable id) y assets.
+
+    ``assets`` mapea ``filename → sha256`` para decidir qué assets hay que
+    subir en el deploy (ENG-072) sin descargar su contenido.
+    """
+
+    bookid: int
+    courseid: int
+    name: str
+    intro: str
+    numbering: Numbering
+    chapters: dict[str, RemoteChapter] = field(default_factory=dict)
+    assets: dict[str, str] = field(default_factory=dict)
 
 
 class DeployRecord(BaseModel):
@@ -125,3 +160,20 @@ class MoodleProvider(ABC):
     @abstractmethod
     def list_deploys(self, courseid: int) -> list[DeployRecord]:
         """Todos los despliegues registrados en el curso (más reciente primero)."""
+
+    @abstractmethod
+    def get_book(self, bookid: int) -> RemoteBook | None:
+        """Estado actual del Book Moodle (8ª función asumida del plugin, ENG-074).
+
+        Metadatos, capítulos por stable id (con su HTML actual: base de la
+        detección de drift, §19.1) y assets con su hash. ``None`` si el
+        ``bookid`` no existe (el Book fue eliminado a mano de Moodle).
+        """
+
+    @abstractmethod
+    def where_deployed(self, source: str, content_id: str, version: str) -> list[int]:
+        """Cursos cuyo despliegue *actual* de ``(source, content_id)`` es ``version``.
+
+        Consulta inversa para hotfixes (ENG-079); 9ª función asumida del
+        plugin, que la resuelve consultando su tabla de despliegues.
+        """

@@ -16,12 +16,13 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 6 — Moodle adapter ✅ (2026-10-09) · **Próximo:** Fase 7 — Deployment engine
+**Fase actual:** 7 — Deployment engine ✅ (2026-10-15) · **Próximo:** Fase 8 — Releases y severidad
 
 | Milestone | Contenido | Estado |
 |---|---|---|
 | M1 (F0–F4) | validate + preview | ✅ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ✅ |
+| M3 (F7) | deploy + rollback | ✅ (contra fake; moodle-docker 🔌 pendiente) |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -228,13 +229,55 @@ mypy strict ✓, **168 tests** ✓ (28 nuevos) + 10 skipped de integración.
 
 ### FASE 7 — Deployment engine — ⬜ pendiente
 
-### FASE 7 — Deployment engine — ⬜ pendiente
+### FASE 7 — Deployment engine — ✅ completada el 2026-10-15
 
-- [ ] **ENG-070**–**ENG-080**: `Planner` (diff → plan con CREATE/UPDATE/DELETE/UPLOAD),
-  detección de eliminaciones, assets en dos pasadas, `Executor` idempotente con
-  `content_hash`, cálculo de `DeploymentState`, bloqueo de RECALLED, comandos
-  `deploy`/`status`, endpoints `/deploy`, `/deployment/plan`, `/deployment/status`,
-  `/deployment/where` 🔌, tests E2E contra el fake.
+- [x] **ENG-070** (L) `Planner` (`deployment/planner.py`): diff del `RenderedBook`
+  objetivo contra el HTML **actual** de Moodle → plan CREATE/UPDATE/DELETE/UPLOAD
+  con resumen legible (formato §17.1). El diff contra HTML real (no solo contra
+  el hash registrado) hace que un drift se sobrescriba al redeploy.
+- [x] **ENG-071** (M) Eliminaciones detectadas y marcadas `requires_confirmation`;
+  el executor no las aplica sin confirmación (§17.2).
+- [x] **ENG-072** (L) Assets en dos pasadas: render 1 identifica assets → subida
+  (solo los que cambian, por sha256) → render 2 con `MoodleAssetAdapter` de URLs
+  reales. Refinado: el executor **resuelve los placeholders `#chapter-<id>` en el
+  mismo deploy** (re-upsert con URL real), lo que hace el rollback byte-exacto.
+- [x] **ENG-073** (L) `Executor` (`deployment/executor.py`): orden del manifest,
+  idempotencia por stable ids, registro final con `content_hash` (JSON
+  `{stable_id: sha256}` ordenado — permite saber qué capítulo driftó).
+- [x] **ENG-074** (M) `state.py`: `compute_state → StateInfo` con NOT_DEPLOYED /
+  UPDATE_AVAILABLE(+severity vía `ReleasePort`) / DRIFT_DETECTED (edición manual,
+  capítulo añadido, book borrado, hash corrupto) / UP_TO_DATE / ERROR.
+- [x] **ENG-075** (M) Bloqueo RECALLED en planner (`RecalledVersionError`);
+  `force=True` lo salta con warning en el resultado. `ReleasePort` + 
+  `NullReleasePort` por defecto; Fase 8 lo sustituye por SQLite.
+- [x] **ENG-076** (M) `courseascode deploy --course --book [--version|--ref]
+  [--yes] [--force]`: plan §17.1, confirmación (typer.confirm), eliminaciones con
+  confirmación aparte, latest tag por defecto, exit 2 en errores.
+- [x] **ENG-077** (S) Rollback = deploy con `--version` anterior; test E2E y smoke
+  real verifican estado byte-exacto (mismos capítulos, mismo HTML, mismo hash).
+- [x] **ENG-078** (M) `courseascode status --course`: tabla Book/Version/State/
+  Severity/Commit. Sin `--course` → exit 2 documentado (el provider no lista
+  cursos globalmente).
+- [x] **ENG-079** (M) Endpoints `POST /deploy`, `POST /deployment/plan`,
+  `GET /deployment/status`, `GET /deployment/where` (`api/deployment.py`,
+  montados en `web/app.py`; sin Moodle configurado → 503 JSON; recall → 409).
+- [x] **ENG-080** (L) 68 tests nuevos: planner (8), executor (10), state (12),
+  service (9), **E2E contra el fake (10)**, endpoints (10), CLI (9). Ciclo
+  completo: deploy → update sin duplicados → rollback exacto → drift →
+  eliminación con/sin confirmación → redeploy idempotente.
+- Interfaz `MoodleProvider` ampliada: `get_book(bookid)` (8ª función asumida
+  `local_courseascode_get_book`) y `where_deployed(source, content_id, version)`
+  (9ª asumida) — documentadas en `moodle/functions.py`. URL de asset del fake
+  ahora `https://moodle.local/pluginfile.php/...` (la anterior `pluginfile://`
+  era irreal y el sanitizer la eliminaba).
+
+**DoD Fase 7 — verificado (2026-10-15):** criterios §32 de ciclo básico, update y
+rollback pasan contra el fake (5–6, 7–10, 11; 13 parcial: recall/severity).
+Smoke E2E real: deploy v1.0.0 → update v1.1.0 → rollback byte-exacto →
+UP_TO_DATE. `make check` verde: ruff ✓, mypy strict ✓, **236 tests** ✓ (+10
+skipped `integration`). Contra moodle-docker 🔌 queda para ENG-104 (Fase 9).
+
+### FASE 8 — Releases, severidad y notificaciones — ⬜ pendiente
 
 ### FASE 8 — Releases, severidad y notificaciones — ⬜ pendiente
 
@@ -260,6 +303,25 @@ mypy strict ✓, **168 tests** ✓ (28 nuevos) + 10 skipped de integración.
 **Hito crítico:** tabla + `upsert_book/chapter` + token listos **antes de terminar F6**.
 
 ## Registro de sesiones
+
+### 2026-10-15 — Sesión 8: Fase 7 completa (deployment engine)
+
+- **ENG-070 a ENG-080 implementados**: `Planner` (diff contra HTML real de
+  Moodle), `Executor` idempotente con resolución de placeholders en caliente,
+  servicio de pipeline §17 (dos pasadas de assets), estados (§19) con drift,
+  bloqueo RECALLED con `--force`, CLI `deploy`/`status`, 4 endpoints de
+  deployment y 68 tests nuevos con E2E completo contra el fake.
+- Decisiones: `content_hash` = JSON `{stable_id: sha256}`; `ReleasePort` con
+  `NullReleasePort` (Fase 8 lo vuelca a SQLite); 8ª/9ª funciones asumidas del
+  plugin (`get_book`, `where_deployed`) documentadas en `functions.py`; URL de
+  asset del fake corregida a `pluginfile.php` real.
+- **DoD verificado**: §32 (ciclos básico/update/rollback) contra el fake; smoke
+  E2E real con rollback byte-exacto. `make check` verde: ruff ✓, mypy strict ✓,
+  **236 tests** ✓. **M3 (deploy + rollback) cerrado contra el fake.**
+- **Pendiente para la próxima sesión:** Fase 8 (ENG-090–095): persistencia
+  SQLite + SQLModel (`Release`, `AuditEvent`), `release mark/list` real
+  (sustituye `NullReleasePort`), webhook `POST /hooks/git` con firma, endpoint
+  de afectados 🔌 y auditoría. Deps nuevas previstas: sqlmodel.
 
 ### 2026-10-09 — Sesión 7: Fase 6 completa (Moodle adapter)
 

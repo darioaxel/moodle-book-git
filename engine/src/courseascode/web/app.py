@@ -21,6 +21,12 @@ Otras decisiones:
 - ``create_app`` acepta un provider explícito para tests; si no se da,
   intenta ``LocalGitProvider`` y queda ``None`` si el contenido no es un
   repo Git (entonces ``?ref`` no está disponible y el catálogo responde 503).
+- Los endpoints de despliegue (ENG-079: ``POST /deploy``, ``POST
+  /deployment/plan``, ``GET /deployment/status``, ``GET /deployment/where``)
+  se montan desde ``courseascode.api.deployment`` con las mismas
+  dependencias; sin provider Git o Moodle responden 503 JSON. En producción
+  el ``MoodleProvider`` es un ``MoodleRestClient`` construido desde
+  ``MOODLE_URL``/``MOODLE_TOKEN``.
 - Los endpoints de catálogo (ENG-053) viven en esta misma app: ``GET
   /catalog`` (índice filtrado por el ``SourceRegistry`` según el header
   ``X-CourseAsCode-User``) y ``GET /catalog/{source}/{book}/versions``.
@@ -44,6 +50,7 @@ from urllib.parse import urlencode
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
+from courseascode.api.deployment import DeploymentApiDeps, create_deployment_router
 from courseascode.catalog import (
     CatalogBuilder,
     CatalogEntry,
@@ -54,12 +61,14 @@ from courseascode.catalog import (
 from courseascode.content.links import PreviewAssetAdapter, PreviewLinkAdapter
 from courseascode.content.renderer import RenderedBook, render_book
 from courseascode.content.themes import Theme, TocItem, load_theme
+from courseascode.deployment.releases import ReleasePort
 from courseascode.git.local_provider import LocalGitProvider
 from courseascode.git.provider import GitProvider, GitProviderError
 from courseascode.git.versioning import VersionResolver
 from courseascode.manifests.errors import ManifestError
 from courseascode.manifests.models import BookManifest, ChapterManifest, CourseManifest
 from courseascode.manifests.parser import ManifestParser
+from courseascode.moodle.provider import MoodleProvider
 
 _DEFAULT_THEME = "theme-default"
 # Temas disponibles en el selector (hoy solo el base; §14 prevé más).
@@ -88,6 +97,8 @@ class _PreviewContext:
     default_ref: str | None  # ENG-043: ref fijado por ``courseascode preview --ref``
     default_theme: str
     registry: SourceRegistry  # ENG-052: fuentes y ACL del catálogo
+    moodle: MoodleProvider | None  # ENG-079: endpoints de despliegue
+    releases: ReleasePort | None  # ENG-075: severidad/recall (Fase 8: persistencia)
 
 
 @dataclass(frozen=True)
@@ -101,14 +112,16 @@ class _CatalogRequest:
     theme_name: str | None
 
 
-def create_app(
+def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la app
     content_root: Path,
     provider: GitProvider | None = None,
     default_ref: str | None = None,
     default_theme: str = _DEFAULT_THEME,
     registry: SourceRegistry | None = None,
+    moodle: MoodleProvider | None = None,
+    releases: ReleasePort | None = None,
 ) -> FastAPI:
-    """Crea la app de preview y catálogo sobre ``content_root`` (§13, §12).
+    """Crea la app de preview, catálogo y despliegue sobre ``content_root``.
 
     Args:
         content_root: raíz del repo de contenidos (working tree).
@@ -121,6 +134,10 @@ def create_app(
         default_theme: tema usado si la petición no trae ``?theme``.
         registry: fuentes y ACL del catálogo (ENG-052); por defecto el
             registro de la Beta con la fuente oficial única.
+        moodle: provider Moodle para los endpoints de despliegue (ENG-079);
+            ``None`` (sin configuración) → 503 JSON claro en esas rutas.
+        releases: puerto del registro de releases (ENG-075); por defecto el
+            ``NullReleasePort`` (sin recalls hasta Fase 8).
     """
     if provider is None:
         try:
@@ -133,9 +150,16 @@ def create_app(
         default_ref=default_ref,
         default_theme=default_theme,
         registry=registry or SourceRegistry.default(),
+        moodle=moodle,
+        releases=releases,
     )
 
     app = FastAPI(title="courseascode preview", docs_url=None, redoc_url=None)
+    app.include_router(
+        create_deployment_router(
+            DeploymentApiDeps(git=ctx.provider, moodle=ctx.moodle, releases=ctx.releases)
+        )
+    )
 
     @app.exception_handler(_PreviewError)
     async def _preview_error_handler(request: Request, exc: _PreviewError) -> HTMLResponse:
