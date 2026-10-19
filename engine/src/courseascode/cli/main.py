@@ -17,8 +17,11 @@ from courseascode.content.themes import TocItem, load_theme
 from courseascode.deployment import (
     DeploymentService,
     DeploymentServiceError,
+    NullReleasePort,
     RecalledVersionError,
+    ReleasePort,
 )
+from courseascode.domain.deployment import Severity
 from courseascode.domain.identity import ContentId
 from courseascode.git import GitProviderError, LocalGitProvider, VersionResolver
 from courseascode.manifests.errors import ManifestError
@@ -26,6 +29,7 @@ from courseascode.manifests.models import BookManifest
 from courseascode.manifests.parser import ManifestParser
 from courseascode.manifests.validator import Validator
 from courseascode.moodle import MoodleError, MoodleRestClient
+from courseascode.releases import ReleaseStore, ReleaseStoreError, SqlReleasePort, default_db_url
 from courseascode.web import create_app
 
 app = typer.Typer(
@@ -43,6 +47,46 @@ def _not_implemented() -> None:
     """Placeholder de Fase 0: los comandos se implementan por fases."""
     typer.echo("not implemented yet", err=True)
     raise typer.Exit(code=1)
+
+
+def _default_source() -> str:
+    """Namespace de la fuente oficial (mismo criterio que ``info``, ENG-054)."""
+    return SourceRegistry.default().sources[0].name
+
+
+def _releases_from_env() -> ReleasePort:
+    """Port de releases del CLI: ``SqlReleasePort`` si hay BD (``COURSEASCODE_DB``).
+
+    Sin BD configurada, el comportamiento es el de siempre (``NullReleasePort``:
+    sin severidades ni recalls). Así el circuito del DoD de Fase 8 funciona
+    igual desde CLI y desde la API con la misma base de datos.
+    """
+    db_url = os.environ.get("COURSEASCODE_DB")
+    if not db_url:
+        return NullReleasePort()
+    return SqlReleasePort(ReleaseStore(db_url), source=_default_source())
+
+
+def _coordinator_token(token_option: str | None) -> str:
+    """Exige el rol coordinador: el token de admin debe estar en el entorno.
+
+    El operador es quien ejecuta el CLI, así que su credencial es la variable
+    de entorno ``COURSEASCODE_ADMIN_TOKEN`` (§25: credenciales por entorno,
+    nunca en el repositorio). ``--token`` permite sobreescribirla (p. ej. CI)
+    pero debe coincidir con la configurada. Sin ella, salida clara con exit 3.
+    """
+    configured = os.environ.get("COURSEASCODE_ADMIN_TOKEN")
+    if not configured:
+        typer.echo(
+            "error: esta operación requiere el rol coordinador; "
+            "configura COURSEASCODE_ADMIN_TOKEN en el entorno",
+            err=True,
+        )
+        raise typer.Exit(code=3)
+    if token_option is not None and token_option != configured:
+        typer.echo("error: token de coordinador incorrecto", err=True)
+        raise typer.Exit(code=3)
+    return configured
 
 
 def _moodle_from_env() -> MoodleRestClient:
@@ -272,7 +316,9 @@ def deploy(  # noqa: PLR0913, PLR0917 - comando Typer: una opción por flag (§2
     except GitProviderError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
-    service = DeploymentService(provider, _moodle_from_env(), source=content.source)
+    service = DeploymentService(
+        provider, _moodle_from_env(), _releases_from_env(), source=content.source
+    )
 
     try:
         plan = service.plan(course_id, content.id, version=version, ref=ref, force=force)
@@ -344,7 +390,7 @@ def status(
         provider = LocalGitProvider(root)
     except GitProviderError:
         provider = None  # sin repo Git no hay "última versión": solo drift/up-to-date
-    service = DeploymentService(provider, _moodle_from_env())
+    service = DeploymentService(provider, _moodle_from_env(), _releases_from_env())
     rows = service.course_status(course_id)
     if not rows:
         typer.echo(f"El curso {course_id} no tiene despliegues registrados.")
@@ -367,20 +413,86 @@ def export(course: Annotated[str, typer.Option(help="Curso Moodle")]) -> None:
 
 
 @release_app.command("mark")
-def release_mark(
+def release_mark(  # noqa: PLR0913, PLR0917 - comando Typer: una opción por flag (§11.1)
     ref: Annotated[str, typer.Argument(help="Tag del Book, p. ej. book/ut03-mvc/v1.3.0")],
     severity: Annotated[str, typer.Option(help="normal | critical")] = "normal",
     fixed_in: Annotated[str | None, typer.Option(help="Versión que corrige el problema")] = None,
     reason: Annotated[str | None, typer.Option(help="Motivo (obligatorio si es crítico)")] = None,
+    recall: Annotated[
+        bool, typer.Option("--recall", help="Retira la versión (RECALLED, §11)")
+    ] = False,
+    source: Annotated[str | None, typer.Option(help="Fuente del Book")] = None,
+    token: Annotated[
+        str | None, typer.Option(help="Token de coordinador (por defecto, env del operador)")
+    ] = None,
 ) -> None:
-    """Marca severidad/recall de una versión publicada (§11)."""
-    _not_implemented()
+    """Marca severidad/recall de una versión publicada (§11.1, ENG-091).
+
+    Solo rol coordinador (``COURSEASCODE_ADMIN_TOKEN``). El motivo es
+    obligatorio cuando la severidad es ``critical`` o se marca ``--recall``,
+    como en el flujo de hotfix de la spec. Queda auditado (ENG-095).
+    """
+    try:
+        severity_enum = Severity(severity)
+    except ValueError:
+        typer.echo(f"error: --severity debe ser normal o critical: {severity!r}", err=True)
+        raise typer.Exit(code=2) from None
+    if reason is None and (severity_enum is Severity.CRITICAL or recall):
+        typer.echo(
+            "error: --reason es obligatorio si la severidad es critical o se marca --recall",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    _coordinator_token(token)
+
+    store = ReleaseStore(default_db_url())
+    effective_source = source or _default_source()
+    try:
+        info = store.mark(
+            ref,
+            source=effective_source,
+            severity=severity_enum,
+            recalled=recall,
+            fixed_in=fixed_in,
+            reason=reason,
+            marked_by="coordinator",
+        )
+    except ReleaseStoreError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    label = "RECALLED" if info.recalled else info.severity
+    typer.echo(f"{info.ref} ({info.source}) marcado: {label}")
 
 
 @release_app.command("list")
-def release_list(book: Annotated[str, typer.Argument(help="ContentId del Book")]) -> None:
-    """Lista releases y su estado del ciclo de vida (§11)."""
-    _not_implemented()
+def release_list(book: Annotated[str, typer.Argument(help="ContentId o id del Book")]) -> None:
+    """Lista releases y su estado del ciclo de vida (§11, ENG-091)."""
+    source: str | None = None
+    book_id = book
+    try:
+        content = ContentId.parse(book)
+    except ValueError:
+        pass
+    else:
+        source, book_id = content.source, content.id
+
+    store = ReleaseStore(default_db_url())
+    releases = store.list_for(book_id, source=source)
+    if not releases:
+        scope = f"@{source}/{book_id}" if source else book_id
+        typer.echo(f"Sin releases marcadas para {scope}.")
+        return
+    typer.echo(
+        f"{'Ref':<28} {'Src':<8} {'Version':<10} {'Severity':<10} "
+        f"{'Recalled':<9} {'Fixed in':<10} {'By':<14} Marked at"
+    )
+    for info in releases:
+        severity = info.severity.upper() if info.severity == "critical" else info.severity
+        typer.echo(
+            f"{info.ref:<28} {info.source:<8} {info.version:<10} {severity:<10} "
+            f"{'yes' if info.recalled else 'no':<9} {(info.fixed_in or '-'):<10} "
+            f"{info.marked_by:<14} {info.marked_at.isoformat()}"
+        )
 
 
 def main() -> None:

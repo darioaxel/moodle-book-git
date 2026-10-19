@@ -36,7 +36,7 @@ from courseascode.content.sanitize import sanitize_html
 from courseascode.deployment.executor import Executor
 from courseascode.deployment.hashes import hash_bytes
 from courseascode.deployment.planner import Planner
-from courseascode.deployment.releases import ReleasePort
+from courseascode.deployment.releases import AuditableReleasePort, ReleasePort
 from courseascode.deployment.state import StateInfo, compute_state
 from courseascode.domain.deployment import DeploymentPlan, DeploymentResult
 from courseascode.domain.identity import ContentId, RefKind
@@ -160,7 +160,7 @@ class DeploymentService:
         (``confirmed_deletions`` o ``assume_yes``, §17.2)."""
         plan = self.plan(courseid, book_id, version=version, ref=ref, force=force)
         if not plan.actions:
-            return DeploymentResult(
+            result = DeploymentResult(
                 success=True,
                 message=(
                     f"@{plan.content} ya está desplegado en v{plan.target_version}: nada que hacer."
@@ -168,10 +168,45 @@ class DeploymentService:
                 version=str(plan.target_version),
                 commit=plan.git_commit,
             )
-        return Executor(self._moodle).execute(
-            plan,
-            confirmed_deletions=confirmed_deletions or assume_yes,
-            deployed_by=deployed_by,
+        else:
+            result = Executor(self._moodle).execute(
+                plan,
+                confirmed_deletions=confirmed_deletions or assume_yes,
+                deployed_by=deployed_by,
+            )
+        self._record_audit("deploy", actor=deployed_by, plan=plan, result=result)
+        return result
+
+    def _record_audit(
+        self,
+        event_type: str,
+        *,
+        actor: str,
+        plan: DeploymentPlan,
+        result: DeploymentResult,
+    ) -> None:
+        """Auditoría ENG-095: si el port la soporta, queda quién/cuándo/qué.
+
+        Punto menos invasivo: un solo registro por llamada a ``deploy``, en el
+        servicio (el ``Executor`` se queda sin cambios; con ports sin
+        persistencia —``NullReleasePort``— es un no-op).
+        """
+        if not isinstance(self._releases, AuditableReleasePort):
+            return
+        self._releases.record_event(
+            event_type,
+            actor=actor,
+            source=plan.content.source,
+            book_id=plan.content.id,
+            version=str(plan.target_version),
+            detail={
+                "success": result.success,
+                "git_ref": plan.git_ref,
+                "git_commit": plan.git_commit,
+                "actions": len(result.actions_applied),
+                "message": result.message,
+                "warnings": list(result.warnings),
+            },
         )
 
     # -- estado (§19) -------------------------------------------------------------

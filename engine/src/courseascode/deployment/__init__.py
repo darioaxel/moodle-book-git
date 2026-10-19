@@ -21,11 +21,12 @@ from courseascode.deployment.hashes import (
     serialize_hashes,
 )
 from courseascode.deployment.planner import Planner, RecalledVersionError
-from courseascode.deployment.releases import NullReleasePort, ReleasePort
+from courseascode.deployment.releases import AuditableReleasePort, NullReleasePort, ReleasePort
 from courseascode.deployment.service import BookStatus, DeploymentService, DeploymentServiceError
 from courseascode.deployment.state import StateInfo, compute_state
 
 __all__ = [
+    "AuditableReleasePort",
     "BookStatus",
     "DeploymentService",
     "DeploymentServiceError",

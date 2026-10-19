@@ -33,6 +33,12 @@ Otras decisiones:
   Las respuestas JSON salen de los modelos pydantic de ``catalog/`` vía
   ``model_dump(mode="json")``; los errores usan ``HTTPException`` (JSON
   ``{"detail": ...}``).
+- Fase 8 monta además: ``POST /hooks/git`` (webhook de Git con firma HMAC,
+  ENG-093), ``GET /releases/affected`` (cursos afectados por una versión
+  marcada, ENG-094) y ``GET /audit`` (auditoría admin, ENG-095), todos desde
+  ``courseascode.api`` con el ``ReleaseStore`` SQLite (ENG-090). Sin store,
+  sin secreto o sin token responden 503 JSON claro; la app sigue sirviendo
+  preview/catálogo igual (con ``NullReleasePort`` si no hay BD).
 """
 
 from __future__ import annotations
@@ -51,6 +57,8 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from courseascode.api.deployment import DeploymentApiDeps, create_deployment_router
+from courseascode.api.hooks import create_hooks_router
+from courseascode.api.releases import ReleasesApiDeps, create_releases_router
 from courseascode.catalog import (
     CatalogBuilder,
     CatalogEntry,
@@ -69,6 +77,7 @@ from courseascode.manifests.errors import ManifestError
 from courseascode.manifests.models import BookManifest, ChapterManifest, CourseManifest
 from courseascode.manifests.parser import ManifestParser
 from courseascode.moodle.provider import MoodleProvider
+from courseascode.releases import ReleaseStore, SqlReleasePort
 
 _DEFAULT_THEME = "theme-default"
 # Temas disponibles en el selector (hoy solo el base; §14 prevé más).
@@ -120,6 +129,9 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
     registry: SourceRegistry | None = None,
     moodle: MoodleProvider | None = None,
     releases: ReleasePort | None = None,
+    store: ReleaseStore | None = None,
+    webhook_secret: str | None = None,
+    admin_token: str | None = None,
 ) -> FastAPI:
     """Crea la app de preview, catálogo y despliegue sobre ``content_root``.
 
@@ -136,14 +148,24 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
             registro de la Beta con la fuente oficial única.
         moodle: provider Moodle para los endpoints de despliegue (ENG-079);
             ``None`` (sin configuración) → 503 JSON claro en esas rutas.
-        releases: puerto del registro de releases (ENG-075); por defecto el
-            ``NullReleasePort`` (sin recalls hasta Fase 8).
+        releases: puerto del registro de releases (ENG-075/ENG-092); si no se
+            da pero hay ``store``, se construye un ``SqlReleasePort`` sobre la
+            BD (comportamiento ``NullReleasePort`` cuando no hay nada).
+        store: BD de releases/auditoría (ENG-090); habilita ``POST /hooks/git``
+            (con ``webhook_secret``), ``GET /releases/affected`` con severidad
+            y ``GET /audit`` (con ``admin_token``).
+        webhook_secret: secreto HMAC del webhook de Git (ENG-093,
+            ``COURSEASCODE_WEBHOOK_SECRET``); sin él el endpoint responde 503.
+        admin_token: token del rol coordinador (ENG-091,
+            ``COURSEASCODE_ADMIN_TOKEN``) para leer ``/audit``.
     """
     if provider is None:
         try:
             provider = LocalGitProvider(content_root)
         except GitProviderError:
             provider = None
+    if releases is None and store is not None:
+        releases = SqlReleasePort(store)
     ctx = _PreviewContext(
         content_root=content_root.resolve(),
         provider=provider,
@@ -160,6 +182,12 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
             DeploymentApiDeps(git=ctx.provider, moodle=ctx.moodle, releases=ctx.releases)
         )
     )
+    app.include_router(
+        create_releases_router(
+            ReleasesApiDeps(moodle=ctx.moodle, store=store, admin_token=admin_token)
+        )
+    )
+    app.include_router(create_hooks_router(store, webhook_secret))
 
     @app.exception_handler(_PreviewError)
     async def _preview_error_handler(request: Request, exc: _PreviewError) -> HTMLResponse:

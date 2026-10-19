@@ -17,7 +17,7 @@ Contrato:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from courseascode.domain.deployment import Severity
 from courseascode.domain.semver import SemVer
@@ -32,6 +32,31 @@ class ReleasePort(Protocol):
 
     def is_recalled(self, source: str, book_id: str, version: SemVer) -> bool:
         """``True`` si la versión está retirada (§18)."""
+        ...
+
+
+@runtime_checkable
+class AuditableReleasePort(ReleasePort, Protocol):
+    """``ReleasePort`` con auditoría (ENG-095).
+
+    ``DeploymentService`` lo detecta por ``isinstance`` y, cuando el port lo
+    soporta (p. ej. ``SqlReleasePort`` con BD configurada), registra cada
+    deploy en ``AuditEvent`` con actor = ``deployed_by``. Los ports sin
+    persistencia (``NullReleasePort``, los de memoria de los tests) no
+    soportan este método y el servicio simplemente no audita.
+    """
+
+    def record_event(  # noqa: PLR0913 - evento de auditoría: un campo por dimensión
+        self,
+        event_type: str,
+        *,
+        actor: str,
+        source: str | None = None,
+        book_id: str | None = None,
+        version: str | None = None,
+        detail: dict[str, object] | None = None,
+    ) -> None:
+        """Añade un evento a la auditoría append-only (quién/cuándo/qué)."""
         ...
 
 

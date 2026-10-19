@@ -5,7 +5,10 @@ Estados (§19):
 - ``NOT_DEPLOYED``: sin registro de despliegue en la tabla del plugin.
 - ``UPDATE_AVAILABLE``: hay despliegue, pero la versión objetivo (la última
   disponible, cuando el caller la conoce) es distinta; la severidad viene del
-  ``ReleasePort`` (ENG-075) para el badge amarillo/rojo del plugin.
+  ``ReleasePort`` (ENG-075) para el badge amarillo/rojo del plugin: primero la
+  de la versión objetivo (la actualización pendiente) y, si no está marcada,
+  la de la versión desplegada (Fase 8: un curso que ya tiene una versión
+  crítica/recalled recibe el aviso aunque no sepa de la nueva, §11).
 - ``DRIFT_DETECTED``: la versión coincide (no se pide otra), pero el HTML
   actual del Book en Moodle difiere del ``content_hash`` registrado: alguien
   editó el contenido a mano (§19.1). También cubre el caso en que el Book fue
@@ -64,6 +67,10 @@ def compute_state(  # noqa: PLR0913, PLR0917 - API pública del cálculo de esta
     version = SemVer.parse(record.content_version)
     if target_version is not None and target_version != version:
         severity = port.severity_of(source, book_id, target_version)
+        if severity is None:
+            # §11: quien ya tiene una versión marcada (p. ej. critical+recalled
+            # pendiente de hotfix) recibe el aviso aunque la nueva no esté marcada.
+            severity = port.severity_of(source, book_id, version)
         return StateInfo(
             state=DeploymentState.UPDATE_AVAILABLE,
             severity=severity,

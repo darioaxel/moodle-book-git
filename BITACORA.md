@@ -16,13 +16,14 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 7 — Deployment engine ✅ (2026-10-15) · **Próximo:** Fase 8 — Releases y severidad
+**Fase actual:** 8 — Releases y severidad ✅ (2026-10-19) · **Próximo:** Fase 9 — Export, robustez y entrega
 
 | Milestone | Contenido | Estado |
 |---|---|---|
 | M1 (F0–F4) | validate + preview | ✅ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ✅ |
 | M3 (F7) | deploy + rollback | ✅ (contra fake; moodle-docker 🔌 pendiente) |
+| M4 (F8–F9) | hotfixes + entrega | 🟡 F8 ✅ · F9 ⬜ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -279,11 +280,49 @@ skipped `integration`). Contra moodle-docker 🔌 queda para ENG-104 (Fase 9).
 
 ### FASE 8 — Releases, severidad y notificaciones — ⬜ pendiente
 
-### FASE 8 — Releases, severidad y notificaciones — ⬜ pendiente
+### FASE 8 — Releases, severidad y notificaciones — ✅ completada el 2026-10-19
 
-- [ ] **ENG-090**–**ENG-095**: persistencia SQLite + SQLModel (`Release`, `AuditEvent`),
-  `release mark/list`, integración de severidad en estados y planner, webhook receiver
-  con verificación de firma, endpoint de afectados 🔌, auditoría.
+- [x] **ENG-090** (M) Persistencia SQLite + SQLModel (`releases/`: `models.py`,
+  `store.py`, `port.py`). `Release` (ref, source, book_id, version, severity,
+  recalled, fixed_in, reason, marked_by, marked_at) y `AuditEvent` append-only.
+  `ReleaseStore(db_url)`: init idempotente, sesión por operación, varias
+  instancias conviven (CLI + web). BD por defecto `~/.courseascode/courseascode.db`
+  (env `COURSEASCODE_DB`).
+- [x] **ENG-091** (M) `courseascode release mark <ref> --severity --recall
+  --fixed-in --reason` real: upsert en SQLite, solo coordinador
+  (`COURSEASCODE_ADMIN_TOKEN`; sin token o incorrecto → exit 2), `--reason`
+  obligatorio si critical o recall (flujo §11.1). `release list <book>` con
+  tabla por release.
+- [x] **ENG-092** (S) `SqlReleasePort` implementa `ReleasePort` y se enchufa en
+  `DeploymentService(releases=...)`; la app web lo construye desde settings
+  (sin BD → `NullReleasePort`). Circuito cerrado: severidad en `StateInfo` y
+  bloqueo RECALLED del planner funcionan con datos reales.
+- [x] **ENG-093** (M) Webhook `POST /hooks/git` (`api/hooks.py`): firma
+  HMAC-SHA256 del body crudo, header `X-CourseAsCode-Signature: sha256=<hex>`
+  (estilo GitHub), secreto en `COURSEASCODE_WEBHOOK_SECRET`; sin secreto →
+  deshabilitado, firma inválida → 401. Eventos válidos quedan en auditoría.
+  Recálculo de cachés = no-op documentado (llega en ENG-103).
+- [x] **ENG-094** (M) `GET /releases/affected?source=&book=&version=` (`api/releases.py`):
+  cursos con esa versión desplegada (vía `where_deployed`) con severity/recall/
+  fixed_in/reason y `deployed_by` (proxy de "profesor" sin consultar usuarios
+  Moodle; la notificación la envía el plugin 🔌 — el servicio solo calcula).
+- [x] **ENG-095** (S) Auditoría: `store.mark()` registra `release.mark` como
+  **invariante del store** (todo writer queda auditado sin duplicar), los
+  deploys registran `deploy` desde el pipeline, webhooks válidos `webhook.git`.
+  Lectura admin: `GET /audit?book_id=` exige token de administrador.
+- Dep nueva: `sqlmodel`. Corrección de cierre: se eliminó el `record_event`
+  duplicado en CLI y en el helper de tests — la auditoría del mark vive en el
+  store (un solo evento por marca).
+
+**DoD Fase 8 — verificado (2026-10-19):** smoke E2E real del flujo §11.1 —
+deploy en 2 cursos → `release mark` critical+recall → `status` muestra badge
+crítico ✓ → redeploy de la RECALLED falla (`RecalledVersionError`) y `--force`
+pasa con warning ✓ → `where` lista `[101, 102]` ✓ → auditoría con
+`deploy` + `release.mark` ✓. `make check` verde: ruff ✓, mypy strict ✓,
+**274 tests** ✓ (38 nuevos: store, hooks, API releases, CLI release, E2E del
+DoD). 10 skipped `integration` (sin moodle-docker 🔌).
+
+### FASE 9 — Export, robustez y entrega — ⬜ pendiente
 
 ### FASE 9 — Export, robustez y entrega — ⬜ pendiente
 
@@ -303,6 +342,26 @@ skipped `integration`). Contra moodle-docker 🔌 queda para ENG-104 (Fase 9).
 **Hito crítico:** tabla + `upsert_book/chapter` + token listos **antes de terminar F6**.
 
 ## Registro de sesiones
+
+### 2026-10-19 — Sesión 9: Fase 8 completa (releases, severidad y notificaciones)
+
+- **ENG-090 a ENG-095 implementados**: `ReleaseStore` SQLite + SQLModel
+  (`Release`, `AuditEvent` append-only), `SqlReleasePort` cerrando el circuito
+  con planner/estados, CLI `release mark/list` con token de coordinador,
+  webhook `POST /hooks/git` con firma HMAC-SHA256, `GET /releases/affected` y
+  auditoría (`release.mark` como invariante del store; lectura admin en
+  `GET /audit`). 38 tests nuevos.
+- Incidentes de cierre: la auditoría del mark se centralizó en el store
+  (el CLI y los helpers de test duplicaban el evento → 2 tests en rojo hasta
+  eliminar los `record_event` redundantes).
+- **DoD verificado**: smoke E2E del hotfix crítico de §11.1 (badge crítico,
+  recall bloquea, `--force` avisa, `where` afectados, auditoría completa).
+  `make check` verde: ruff ✓, mypy strict ✓, **274 tests** ✓.
+- **Pendiente para la próxima sesión:** Fase 9 (ENG-100–106, última): `export
+  --course`, logging structlog, errores recuperables, caché de checkouts/
+  renders, suite E2E con moodle-docker 🔌 (mark `integration`), Dockerfile +
+  docker-compose y documentación (guía de autor, guía de operación). Deps
+  previstas: structlog.
 
 ### 2026-10-15 — Sesión 8: Fase 7 completa (deployment engine)
 
