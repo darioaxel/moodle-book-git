@@ -1,0 +1,20 @@
+{{!
+    Página de versión del Book (§21). Espera: courseid, source, book,
+    versions[] (version, tag), candeploy (bool). El despliegue real se hará
+    con POST /deploy desde este curso (botón pendiente de post-Beta).
+}}
+<div class="local-courseascode-bookversion">
+    <h3>@{{source}}/{{book}}</h3>
+    <ul class="list-group mb-3">
+        {{#versions}}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <span>v{{version}} <small class="text-muted">{{tag}}</small></span>
+                <a class="btn btn-sm btn-secondary" target="_blank"
+                   href="{{preview_url}}?ref={{tag}}">{{#str}} preview {{/str}}</a>
+            </li>
+        {{/versions}}
+    </ul>
+    {{#candeploy}}
+        <p class="text-muted">Deploy/Compare/Rollback desde este curso: post-Beta (POST /deploy, §5.4).</p>
+    {{/candeploy}}
+</div>

@@ -1,0 +1,21 @@
+{{!
+    Panel del curso (§23.1). Espera: courseid y books[] (content_id, source,
+    deployed_version, state, severity). Acciones Preview/Compare/Deploy: post-Beta.
+}}
+<div class="local-courseascode-admin">
+    <h3>{{#str}} admin, local_courseascode {{/str}}</h3>
+    <table class="table">
+        <thead>
+            <tr><th>Book</th><th>{{#str}} version, local_courseascode {{/str}}</th><th>State</th></tr>
+        </thead>
+        <tbody>
+            {{#books}}
+                <tr>
+                    <td>@{{source}}/{{content_id}}</td>
+                    <td>{{deployed_version}}</td>
+                    <td>{{state}}{{#severity}} <span class="badge badge-danger">{{severity}}</span>{{/severity}}</td>
+                </tr>
+            {{/books}}
+        </tbody>
+    </table>
+</div>

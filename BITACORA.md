@@ -16,7 +16,7 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 9 — Export, robustez y entrega ✅ (2026-10-23) · **Beta engine completa** 🎉 · Próximo: pista 🔌 del plugin
+**Fase actual:** 9 — Export, robustez y entrega ✅ (2026-10-23) · **Beta engine completa** 🎉 · Pista 🔌 del plugin: esqueleto + 9 web services ✅ (2026-10-23); pendiente verificación con Moodle real y páginas UI completas
 
 | Milestone | Contenido | Estado |
 |---|---|---|
@@ -369,16 +369,57 @@ verificación E2E real (ENG-104 contra moodle-docker).
 
 ## Pista paralela 🔌 — Plugin Moodle `local_courseascode`
 
-- [ ] Esqueleto del plugin (versión, `db/install.xml`, `db/services.php`).
-- [ ] Tabla `local_courseascode_deploy`.
-- [ ] Web services de escritura (`upsert_book`, `upsert_chapter`, `delete_chapter`,
-  `upload_asset`, `register_deploy`, `get_deploy`).
-- [ ] Páginas UI (catálogo, página de versión, panel de administración).
-- [ ] Capabilities + inyección de CSS del tema.
+- [x] Esqueleto del plugin (`version.php` para Moodle 5.3+, `db/install.xml`,
+  `db/services.php`, capabilities, privacy provider, `lib.php`).
+- [x] Tabla `local_courseascode_deploy` + tabla de mapping
+  `local_courseascode_chapter` (UNIQUE `bookid + stable_id`).
+- [x] Web services del contrato (9 funciones `local_courseascode_*` cotejadas
+  una a una contra `engine/src/courseascode/moodle/functions.py`): escritura
+  (`upsert_book`, `upsert_chapter`, `delete_chapter`, `upload_asset`,
+  `register_deploy`) y lectura (`get_deploy`, `list_deploys`, `get_book`,
+  `where_deployed`). Nombres 9/9 coincidentes; formas de retorno verificadas
+  contra `rest_client.py` (corrección hecha en `get_deploy`: fila en raíz y
+  `null` si no hay despliegue; `upload_asset` ya no borra los demás assets).
+- [x] Capabilities (`:deploy`, `:viewcatalog` en curso; `:manage` en sistema) +
+  inyección de CSS solo en `mod-book-view` + hook de navegación de curso.
+- [ ] Páginas UI (catálogo, página de versión, panel de administración):
+  🟡 esqueletos con templates Mustache; falta presentación completa.
+- [ ] Verificación con Moodle real: `php -l`, instalación y smoke de los web
+  services contra moodle-docker (este entorno no tiene PHP).
 
-**Hito crítico:** tabla + `upsert_book/chapter` + token listos **antes de terminar F6**.
+**Hito crítico:** ✅ cubierto del lado engine-del-contrato — tabla +
+`upsert_book/chapter` + capabilities + token documentado en la Guía de
+operación. La validación real requiere moodle-docker (pendiente).
 
 ## Registro de sesiones
+
+### 2026-10-23 — Sesión 11: Pista 🔌 — esqueleto del plugin `local_courseascode` (Moodle 5.3)
+
+- **Plugin construido a mano en `plugin/`** (a instalar como `local/courseascode`):
+  `version.php` (requires 2026100600 ≈ Moodle 5.3.0, dependencia `mod_book`),
+  `db/install.xml` (tabla `local_courseascode_deploy` + mapping
+  `local_courseascode_chapter` UNIQUE `bookid+stable_id`), `db/services.php`
+  con 9 funciones y `db/access.php` con capabilities `:deploy`,
+  `:viewcatalog` (curso) y `:manage` (sistema).
+- **9 clases external** en `classes/external/` con helpers en
+  `classes/local/book_helper.php` (instancia mod_book idempotente por nombre,
+  mapping stable_id↔chapterid, serialización `deployed_at` epoch↔ISO 8601) y
+  `classes/privacy/provider.php` (null_provider).
+- **Contrato cotejado con el engine** (`functions.py` + `rest_client.py`):
+  nombres 9/9 coincidentes. Correcciones de la verificación estática:
+  `get_deploy` devuelve la fila en el nivel raíz y `null` cuando no hay
+  despliegue (el parser del engine trata `None`/`{}`/`[]` como "sin
+  resultado" y valida el resto como `DeployRecord`); `upload_asset` borra
+  solo el fichero del mismo nombre (antes purgaba todos los assets del
+  Book); `upsert_chapter`/`delete_chapter` devuelven `external_single_structure`
+  vacío en vez de `external_function_parameters`.
+- **Capa de visualización**: `catalog.php`, `bookversion.php`, `admin.php`
+  con templates Mustache (🟡 esqueletos), CSS inyectado solo en
+  `mod-book-view` y navegación de curso vía `lib.php`.
+- **No verificable en este entorno** (sin PHP): `php -l`, instalación y
+  smoke E2E contra moodle-docker quedan pendientes para el entorno con
+  Moodle. El hito crítico (tabla + upsert + capabilities) queda cubierto
+  del lado engine-del-contrato.
 
 ### 2026-10-23 — Sesión 10: Fase 9 completa — Beta del engine terminada
 

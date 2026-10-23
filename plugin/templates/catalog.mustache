@@ -1,0 +1,23 @@
+{{!
+    Catálogo del curso (§12.2). Espera: courseid (int) y sources (array de
+    fuentes visibles con sus books: name, books[] con id, title, summary,
+    chapter_count, latest, versions[] y la URL /catalog/{source}/{book}/preview).
+}}
+<div class="local-courseascode-catalog">
+    {{#sources}}
+        <h3>@{{name}}</h3>
+        {{#books}}
+            <div class="card mb-2">
+                <div class="card-body">
+                    <h5 class="card-title">{{title}} <small class="text-muted">@{{source}}/{{id}}</small></h5>
+                    <p class="card-text">{{summary}}</p>
+                    <p class="text-muted">{{#str}} chaptercount, local_courseascode {{/str}}: {{chapter_count}} ·
+                        {{#str}} latest, local_courseascode {{/str}}: {{latest}}</p>
+                    <a class="btn btn-secondary" href="{{preview_url}}" target="_blank">{{#str}} preview {{/str}}</a>
+                    <a class="btn btn-primary" href="bookversion.php?id={{courseid}}&source={{source}}&book={{id}}">
+                        {{#str}} addtocourse {{/str}} v{{latest}}</a>
+                </div>
+            </div>
+        {{/books}}
+    {{/sources}}
+</div>
