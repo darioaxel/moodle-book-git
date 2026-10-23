@@ -8,6 +8,7 @@ from html import escape
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 import typer
 import uvicorn
 
@@ -20,15 +21,18 @@ from courseascode.deployment import (
     NullReleasePort,
     RecalledVersionError,
     ReleasePort,
+    export_course,
 )
 from courseascode.domain.deployment import Severity
 from courseascode.domain.identity import ContentId
 from courseascode.git import GitProviderError, LocalGitProvider, VersionResolver
+from courseascode.logging_config import configure_logging
 from courseascode.manifests.errors import ManifestError
 from courseascode.manifests.models import BookManifest
 from courseascode.manifests.parser import ManifestParser
 from courseascode.manifests.validator import Validator
 from courseascode.moodle import MoodleError, MoodleRestClient
+from courseascode.moodle.provider import MoodleProvider
 from courseascode.releases import ReleaseStore, ReleaseStoreError, SqlReleasePort, default_db_url
 from courseascode.web import create_app
 
@@ -41,12 +45,6 @@ app = typer.Typer(
 
 release_app = typer.Typer(help="Gestión de releases: severidad, recall y ciclo de vida (§11).")
 app.add_typer(release_app, name="release")
-
-
-def _not_implemented() -> None:
-    """Placeholder de Fase 0: los comandos se implementan por fases."""
-    typer.echo("not implemented yet", err=True)
-    raise typer.Exit(code=1)
 
 
 def _default_source() -> str:
@@ -407,9 +405,66 @@ def status(
 
 
 @app.command()
-def export(course: Annotated[str, typer.Option(help="Curso Moodle")]) -> None:
-    """Exporta el binding curso↔versión a deployments/<curso>.yml (§9)."""
-    _not_implemented()
+def export(
+    course: Annotated[str, typer.Option(help="ID del curso Moodle (courseid)")],
+    output_dir: Annotated[
+        str, typer.Option(help="Directorio de salida (relativo al cwd)")
+    ] = "deployments",
+) -> None:
+    """Exporta el binding curso↔versión a deployments/<curso>.yml (§9, ENG-100).
+
+    Vista exportable del estado de la tabla del plugin para reproducibilidad y
+    auditoría: no es la fuente de verdad. El YAML es byte-estable para un
+    mismo estado (re-export idempotente).
+    """
+    try:
+        course_id = int(course)
+    except ValueError:
+        typer.echo(f"error: --course debe ser un ID numérico de curso: {course!r}", err=True)
+        raise typer.Exit(code=2) from None
+    moodle = _moodle_from_env()
+    try:
+        path = export_course(moodle, course_id, Path(output_dir))
+    except MoodleError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"Exportado: {path.resolve()}")
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Interfaz de escucha")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Puerto HTTP")] = 8000,
+    content: Annotated[
+        str, typer.Option(help="Raíz del repo de contenidos que sirve la app")
+    ] = ".",
+) -> None:
+    """Sirve la app web del servicio: catálogo, preview y API (ENG-105).
+
+    A diferencia de ``preview`` (herramienta del autor sobre el working tree),
+    este es el **servicio** de plataforma (§25): lee su configuración del
+    entorno —``MOODLE_URL``/``MOODLE_TOKEN`` (API de despliegue),
+    ``COURSEASCODE_DB`` (releases/auditoría), ``COURSEASCODE_WEBHOOK_SECRET``
+    (webhook) y ``COURSEASCODE_ADMIN_TOKEN`` (rol coordinador)— y sirve el
+    repo de contenidos indicado con ``--content``. Es el entrypoint del
+    contenedor Docker (``CMD courseascode serve``).
+    """
+    root = Path(content).resolve()
+    moodle: MoodleProvider | None = None
+    url = os.environ.get("MOODLE_URL")
+    token = os.environ.get("MOODLE_TOKEN")
+    if url and token:
+        moodle = MoodleRestClient(url.rstrip("/"), token)
+    db_url = os.environ.get("COURSEASCODE_DB")
+    web_app = create_app(
+        root,
+        moodle=moodle,
+        store=ReleaseStore(db_url) if db_url else None,
+        webhook_secret=os.environ.get("COURSEASCODE_WEBHOOK_SECRET"),
+        admin_token=os.environ.get("COURSEASCODE_ADMIN_TOKEN"),
+    )
+    typer.echo(f"courseascode sirviendo {root} en http://{host}:{port}/ (Ctrl+C para detener)")
+    uvicorn.run(web_app, host=host, port=port)
 
 
 @release_app.command("mark")
@@ -461,6 +516,15 @@ def release_mark(  # noqa: PLR0913, PLR0917 - comando Typer: una opción por fla
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
     label = "RECALLED" if info.recalled else info.severity
+    structlog.get_logger().info(
+        "release.mark",
+        ref=info.ref,
+        source=info.source,
+        severity=info.severity,
+        recalled=info.recalled,
+        fixed_in=info.fixed_in,
+        marked_by=info.marked_by,
+    )
     typer.echo(f"{info.ref} ({info.source}) marcado: {label}")
 
 
@@ -496,6 +560,7 @@ def release_list(book: Annotated[str, typer.Argument(help="ContentId o id del Bo
 
 
 def main() -> None:
+    configure_logging()
     app()
 
 

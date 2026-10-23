@@ -14,8 +14,10 @@ Estados (§19):
   editó el contenido a mano (§19.1). También cubre el caso en que el Book fue
   eliminado a mano de Moodle.
 - ``UP_TO_DATE``: versión e HTML coinciden con el último despliegue.
-- ``ERROR``: ``get_deploy`` falló con un ``MoodleError`` inesperado (red,
-  función del plugin ausente…); el ``detail`` explica el fallo.
+- ``ERROR``: dos casos (ENG-102): el último despliegue registrado tiene
+  ``status != "success"`` (falló a mitad y quedó registrado como ``error``) o
+  la lectura falló con un ``MoodleError`` inesperado (red, función del
+  plugin ausente…); el ``detail`` explica el fallo y cómo recuperarse.
 """
 
 from __future__ import annotations
@@ -65,6 +67,18 @@ def compute_state(  # noqa: PLR0913, PLR0917 - API pública del cálculo de esta
     if record is None:
         return StateInfo(state=DeploymentState.NOT_DEPLOYED)
     version = SemVer.parse(record.content_version)
+    if record.status != "success":
+        # ENG-102: el último deploy registrado falló a mitad; se recupera
+        # relanzando el mismo deploy (el pipeline es idempotente, §17.3).
+        return StateInfo(
+            state=DeploymentState.ERROR,
+            version=version,
+            git_commit=record.git_commit,
+            detail=(
+                f"el último despliegue falló (status={record.status}):"
+                " relanza el mismo deploy para recuperar; es idempotente"
+            ),
+        )
     if target_version is not None and target_version != version:
         severity = port.severity_of(source, book_id, target_version)
         if severity is None:

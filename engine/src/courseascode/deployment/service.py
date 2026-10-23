@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+import structlog
+
 from courseascode.content.links import MoodleAssetAdapter, MoodleLinkAdapter
 from courseascode.content.markdown import create_markdown
 from courseascode.content.renderer import RenderedBook, render_book
@@ -43,10 +45,11 @@ from courseascode.domain.identity import ContentId, RefKind
 from courseascode.domain.semver import SemVer, SemVerError
 from courseascode.git.provider import GitProvider, GitProviderError
 from courseascode.git.versioning import VersionResolver
+from courseascode.logging_config import bound_correlation, correlation_id
 from courseascode.manifests.models import BookManifest
 from courseascode.manifests.parser import ManifestParser
 from courseascode.manifests.validator import Validator
-from courseascode.moodle.provider import MoodleProvider, RemoteBook
+from courseascode.moodle.provider import MoodleError, MoodleProvider, RemoteBook
 
 
 class DeploymentServiceError(RuntimeError):
@@ -158,7 +161,43 @@ class DeploymentService:
     ) -> DeploymentResult:
         """Ejecuta el pipeline completo. Las eliminaciones requieren confirmación
         (``confirmed_deletions`` o ``assume_yes``, §17.2)."""
-        plan = self.plan(courseid, book_id, version=version, ref=ref, force=force)
+        if correlation_id.get() is None:
+            # ENG-101: un deploy = un correlation id (toda la traza comparte id).
+            with bound_correlation():
+                return self.deploy(
+                    courseid,
+                    book_id,
+                    version=version,
+                    ref=ref,
+                    assume_yes=assume_yes,
+                    confirmed_deletions=confirmed_deletions,
+                    force=force,
+                    deployed_by=deployed_by,
+                )
+        log = structlog.get_logger()
+        log.info(
+            "deploy.start",
+            course_id=courseid,
+            book=book_id,
+            source=self._source,
+            version=version,
+            ref=ref,
+            force=force,
+            deployed_by=deployed_by,
+        )
+        try:
+            plan = self.plan(courseid, book_id, version=version, ref=ref, force=force)
+        except Exception as exc:
+            log.error("deploy.error", phase="plan", error=str(exc))
+            raise
+        log.info(
+            "deploy.plan",
+            course_id=courseid,
+            book=book_id,
+            actions=len(plan.actions),
+            has_deletions=plan.has_deletions,
+            target_version=str(plan.target_version),
+        )
         if not plan.actions:
             result = DeploymentResult(
                 success=True,
@@ -169,11 +208,23 @@ class DeploymentService:
                 commit=plan.git_commit,
             )
         else:
-            result = Executor(self._moodle).execute(
-                plan,
-                confirmed_deletions=confirmed_deletions or assume_yes,
-                deployed_by=deployed_by,
-            )
+            try:
+                result = Executor(self._moodle).execute(
+                    plan,
+                    confirmed_deletions=confirmed_deletions or assume_yes,
+                    deployed_by=deployed_by,
+                )
+            except MoodleError as exc:
+                log.error("deploy.error", phase="execute", error=str(exc))
+                raise
+        log.info(
+            "deploy.execute",
+            course_id=courseid,
+            book=book_id,
+            success=result.success,
+            actions_applied=len(result.actions_applied),
+            duration_seconds=round(result.duration_seconds, 3),
+        )
         self._record_audit("deploy", actor=deployed_by, plan=plan, result=result)
         return result
 

@@ -74,6 +74,26 @@ class FakeMoodleProvider(MoodleProvider):
         # es estable aunque se elimine y se recree (rollback exacto, ENG-077).
         self._chapter_ids: dict[tuple[int, str], int] = {}
         self._next_chapter_id = 1
+        # Inyección de fallos para ENG-102: operación -> llamadas restantes
+        # que deben fallar con MoodleError antes de ejecutarse de verdad.
+        self._failures: dict[str, int] = {}
+
+    def fail_next(self, operation: str, *, times: int = 1) -> None:
+        """Programa ``times`` fallos (``MoodleError``) en la operación dada.
+
+        ``operation`` es el nombre del método: ``upsert_book``,
+        ``upsert_chapter``, ``delete_chapter``, ``upload_asset`` o
+        ``register_deploy``. Sirve para simular un Moodle que falla a mitad
+        de un despliegue y verificar la recuperación por idempotencia.
+        """
+        self._failures[operation] = self._failures.get(operation, 0) + times
+
+    def _maybe_fail(self, operation: str) -> None:
+        remaining = self._failures.get(operation, 0)
+        if remaining > 0:
+            self._failures[operation] = remaining - 1
+            msg = f"fake: fallo inyectado en {operation} (simulación de un error de Moodle)"
+            raise MoodleError(msg)
 
     def add_course(self, course_id: int, fullname: str = "", shortname: str = "") -> None:
         """Da de alta un curso en el fake (equivalente a crearlo en Moodle)."""
@@ -106,6 +126,7 @@ class FakeMoodleProvider(MoodleProvider):
         return max(matches, key=lambda r: (r.deployed_at, r.id or 0))
 
     def upsert_book(self, courseid: int, name: str, intro: str, numbering: Numbering) -> int:
+        self._maybe_fail("upsert_book")
         self._require_course(courseid)
         for book in self._books.values():
             if book.courseid == courseid and book.name == name:
@@ -125,6 +146,7 @@ class FakeMoodleProvider(MoodleProvider):
         content_html: str,
         position: int,
     ) -> None:
+        self._maybe_fail("upsert_chapter")
         book = self._require_book(bookid, "local_courseascode_upsert_chapter")
         key = (bookid, chapter_stable_id)
         if key not in self._chapter_ids:
@@ -137,6 +159,7 @@ class FakeMoodleProvider(MoodleProvider):
         )
 
     def delete_chapter(self, bookid: int, chapter_stable_id: str) -> None:
+        self._maybe_fail("delete_chapter")
         book = self._require_book(bookid, "local_courseascode_delete_chapter")
         if chapter_stable_id not in book.chapters:
             msg = (
@@ -148,11 +171,13 @@ class FakeMoodleProvider(MoodleProvider):
         del book.chapters[chapter_stable_id]
 
     def upload_asset(self, bookid: int, filename: str, data: bytes) -> str:
+        self._maybe_fail("upload_asset")
         book = self._require_book(bookid, "local_courseascode_upload_asset")
         book.assets[filename] = data
         return f"https://moodle.local/pluginfile.php/{bookid}/mod_book/{filename}"
 
     def register_deploy(self, record: DeployRecord) -> int:
+        self._maybe_fail("register_deploy")
         self._require_book(record.bookid, "local_courseascode_register_deploy")
         deploy_id = self._next_deploy_id
         self._next_deploy_id += 1

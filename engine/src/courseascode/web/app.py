@@ -5,9 +5,12 @@ Decisión de diseño — **recarga en vivo sin watcher**: la app no usa
 principal del autor en VS Code) cada petición re-renderiza el Book desde
 disco, sin caché. El autor guarda el archivo, refresca el navegador y ve
 el cambio: cumple el DoD de la Fase 4 ("sin reiniciar nada") sin añadir
-dependencias ni procesos extra. Servir un ``?ref`` concreto también es
-seguro: el contenido se lee de un worktree aislado creado por petición
-y se descarta al terminar.
+dependencias ni procesos extra. Servir un ``?ref`` que sea tag o commit
+también es seguro: el contenido se lee de un worktree aislado creado por
+petición y se descarta al terminar, y el render resultante se sirve del
+``RenderCache`` (ENG-103: los tags son inmutables, §8.3). Las ramas y el
+working tree **nunca** se cachean: su contenido puede cambiar entre
+peticiones. Un webhook de Git invalida el caché completo (conservador).
 
 Otras decisiones:
 
@@ -45,7 +48,7 @@ from __future__ import annotations
 
 import mimetypes
 import re
-from collections.abc import Iterator
+from collections.abc import Hashable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from html import escape
@@ -55,6 +58,7 @@ from urllib.parse import urlencode
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.middleware.base import RequestResponseEndpoint
 
 from courseascode.api.deployment import DeploymentApiDeps, create_deployment_router
 from courseascode.api.hooks import create_hooks_router
@@ -66,13 +70,16 @@ from courseascode.catalog import (
     CatalogIndex,
     SourceRegistry,
 )
+from courseascode.content.cache import RenderCache
 from courseascode.content.links import PreviewAssetAdapter, PreviewLinkAdapter
 from courseascode.content.renderer import RenderedBook, render_book
 from courseascode.content.themes import Theme, TocItem, load_theme
 from courseascode.deployment.releases import ReleasePort
+from courseascode.domain.identity import RefKind
 from courseascode.git.local_provider import LocalGitProvider
 from courseascode.git.provider import GitProvider, GitProviderError
 from courseascode.git.versioning import VersionResolver
+from courseascode.logging_config import bound_correlation, configure_logging
 from courseascode.manifests.errors import ManifestError
 from courseascode.manifests.models import BookManifest, ChapterManifest, CourseManifest
 from courseascode.manifests.parser import ManifestParser
@@ -108,6 +115,7 @@ class _PreviewContext:
     registry: SourceRegistry  # ENG-052: fuentes y ACL del catálogo
     moodle: MoodleProvider | None  # ENG-079: endpoints de despliegue
     releases: ReleasePort | None  # ENG-075: severidad/recall (Fase 8: persistencia)
+    cache: RenderCache[RenderedBook]  # ENG-103: renders de tags/commits en memoria
 
 
 @dataclass(frozen=True)
@@ -132,6 +140,7 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
     store: ReleaseStore | None = None,
     webhook_secret: str | None = None,
     admin_token: str | None = None,
+    cache: RenderCache[RenderedBook] | None = None,
 ) -> FastAPI:
     """Crea la app de preview, catálogo y despliegue sobre ``content_root``.
 
@@ -158,7 +167,10 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
             ``COURSEASCODE_WEBHOOK_SECRET``); sin él el endpoint responde 503.
         admin_token: token del rol coordinador (ENG-091,
             ``COURSEASCODE_ADMIN_TOKEN``) para leer ``/audit``.
+        cache: caché de renders (ENG-103); por defecto uno nuevo con TTL y
+            tamaño por defecto. El webhook de Git lo invalida al completo.
     """
+    configure_logging()
     if provider is None:
         try:
             provider = LocalGitProvider(content_root)
@@ -174,9 +186,26 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
         registry=registry or SourceRegistry.default(),
         moodle=moodle,
         releases=releases,
+        cache=cache if cache is not None else RenderCache(),
     )
 
     app = FastAPI(title="courseascode preview", docs_url=None, redoc_url=None)
+
+    @app.middleware("http")
+    async def _correlation_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """ENG-101: correlation id por petición (header o generado).
+
+        Middleware ASGI (no dependencia con yield): el set y el reset ocurren
+        en el mismo contexto, y el valor se propaga al contexto del endpoint —
+        también cuando FastAPI lo ejecuta en su threadpool (anyio copia las
+        contextvars al hilo trabajador).
+        """
+        cid = request.headers.get("X-Correlation-Id")
+        with bound_correlation(cid):
+            return await call_next(request)
+
     app.include_router(
         create_deployment_router(
             DeploymentApiDeps(git=ctx.provider, moodle=ctx.moodle, releases=ctx.releases)
@@ -187,7 +216,7 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
             ReleasesApiDeps(moodle=ctx.moodle, store=store, admin_token=admin_token)
         )
     )
-    app.include_router(create_hooks_router(store, webhook_secret))
+    app.include_router(create_hooks_router(store, webhook_secret, cache=ctx.cache))
 
     @app.exception_handler(_PreviewError)
     async def _preview_error_handler(request: Request, exc: _PreviewError) -> HTMLResponse:
@@ -373,20 +402,56 @@ def _book_tags(ctx: _PreviewContext, book_id: str) -> list[str]:
         return []
 
 
-def _render(book_dir: Path, book: BookManifest, book_id: str) -> RenderedBook:
+def _render_cache_key(
+    ctx: _PreviewContext, book_id: str, ref: str | None
+) -> tuple[Hashable, ...] | None:
+    """Clave de caché del render, o ``None`` si el ref no es cacheable (ENG-103).
+
+    Cachean solo los refs que resuelven a **tag o commit** (inmutables, §8.3),
+    nunca ramas (pueden moverse) ni el working tree (``ref is None``). Un ref
+    que no resuelve (ya no existe) tampoco cachea: la petición falla 404 como
+    siempre.
+    """
+    if ref is None or ctx.provider is None:
+        return None
+    try:
+        git_ref = ctx.provider.get_ref(ref)
+        if git_ref.kind is RefKind.BRANCH:
+            return None
+        sha = ctx.provider.get_commit(ref)
+    except GitProviderError:
+        return None
+    return (sha, book_id, "preview")
+
+
+def _render(
+    ctx: _PreviewContext,
+    book_id: str,
+    book_dir: Path,
+    book: BookManifest,
+    ref: str | None,
+) -> RenderedBook:
     """Renderiza el book con los adapters de preview (ENG-042).
 
     Los assets se referencian en Markdown con rutas relativas al Book que ya
     incluyen su directorio (p. ej. ``assets/mvc.svg``); con ``base_url`` igual
     a ``/books/<id>`` las URLs absolutas resultantes coinciden con la ruta que
-    ENG-041 sirve: ``/books/<id>/assets/...``.
+    ENG-041 sirve: ``/books/<id>/assets/...``. Para refs inmutables (tag/commit)
+    el resultado se sirve del ``RenderCache`` (ENG-103).
     """
-    return render_book(
-        book_dir=book_dir,
-        book=book,
-        link_adapter=PreviewLinkAdapter(f"/books/{book_id}"),
-        asset_adapter=PreviewAssetAdapter(f"/books/{book_id}"),
-    )
+
+    def _produce() -> RenderedBook:
+        return render_book(
+            book_dir=book_dir,
+            book=book,
+            link_adapter=PreviewLinkAdapter(f"/books/{book_id}"),
+            asset_adapter=PreviewAssetAdapter(f"/books/{book_id}"),
+        )
+
+    key = _render_cache_key(ctx, book_id, ref)
+    if key is None:
+        return _produce()
+    return ctx.cache.get_or_render(key, _produce)
 
 
 def _selector_html(ctx: _PreviewContext, book_id: str, ref: str | None, theme_name: str) -> str:
@@ -503,7 +568,7 @@ def _chapter_page(
         chapter = next((c for c in book.chapters if c.id == chapter_id), None)
         if chapter is None:
             raise _PreviewError(404, f"capítulo no encontrado: {chapter_id!r}")
-        rendered = _render(book_dir, book, book_id)
+        rendered = _render(ctx, book_id, book_dir, book, ref or ctx.default_ref)
         rendered_chapter = rendered.chapter(chapter_id)
         assert rendered_chapter is not None  # chapter sale del mismo manifest
         query: dict[str, str] = {}

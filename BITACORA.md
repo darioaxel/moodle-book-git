@@ -16,14 +16,14 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 8 — Releases y severidad ✅ (2026-10-19) · **Próximo:** Fase 9 — Export, robustez y entrega
+**Fase actual:** 9 — Export, robustez y entrega ✅ (2026-10-23) · **Beta engine completa** 🎉 · Próximo: pista 🔌 del plugin
 
 | Milestone | Contenido | Estado |
 |---|---|---|
 | M1 (F0–F4) | validate + preview | ✅ |
 | M2 (F5–F6) | catálogo + adapter Moodle | ✅ |
 | M3 (F7) | deploy + rollback | ✅ (contra fake; moodle-docker 🔌 pendiente) |
-| M4 (F8–F9) | hotfixes + entrega | 🟡 F8 ✅ · F9 ⬜ |
+| M4 (F8–F9) | hotfixes + entrega | ✅ (E2E real 🔌 pendiente) |
 | M2 (F5–F6) | catálogo + adapter Moodle | ⬜ |
 | M3 (F7) | deploy + rollback | ⬜ |
 | M4 (F8–F9) | hotfixes + entrega | ⬜ |
@@ -324,11 +324,48 @@ DoD). 10 skipped `integration` (sin moodle-docker 🔌).
 
 ### FASE 9 — Export, robustez y entrega — ⬜ pendiente
 
-### FASE 9 — Export, robustez y entrega — ⬜ pendiente
+### FASE 9 — Export, robustez y entrega — ✅ completada el 2026-10-23
 
-- [ ] **ENG-100**–**ENG-106**: `export --course`, logging structlog, errores
-  recuperables, caché de checkouts/renders, suite E2E con moodle-docker 🔌,
-  Dockerfile + docker-compose, documentación.
+- [x] **ENG-100** (M) `courseascode export --course C`: genera
+  `deployments/<curso>.yml` (vista exportable, §9) desde el estado del plugin;
+  bytes estables (re-export idempotente).
+- [x] **ENG-101** (M) Logging structlog con **correlation id** por operación
+  (contextvar + `X-Correlation-Id` en la API); eventos `deploy.start/plan/
+  execute/error`; formato `console`/`json` (`COURSEASCODE_LOG_FORMAT`).
+- [x] **ENG-102** (M) Errores recuperables: fallo a mitad registra deploy con
+  `status="error"` (estado ERROR) y propaga `DeploymentExecutionError`
+  accionable ("relanza el mismo deploy"); la reejecución recupera sin
+  duplicar. `FakeMoodleProvider.fail_next(op)` para inyección de fallos.
+- [x] **ENG-103** (M) `RenderCache` en memoria (thread-safe, TTL 15 min, 64
+  entradas, reloj inyectable): solo refs inmutables (tag/commit, clave por
+  sha); working tree y ramas nunca. Invalidación completa vía webhook.
+- [x] **ENG-104** (L) `tests/integration/test_acceptance.py`: los criterios
+  §32 automatizables (importación, actualización, rollback, hotfix) contra
+  moodle-docker; mark `integration` + skipif sin credenciales. El 12
+  (gobernanza Git) es de plataforma, no del engine (docstring).
+- [x] **ENG-105** (S) `engine/Dockerfile` (slim, no-root, healthcheck, BD en
+  volumen) + `engine/.dockerignore` + `docker-compose.yml` en raíz (engine +
+  Moodle + MariaDB, mount preparado para el plugin 🔌) + módulo de arranque
+  `python -m courseascode.serve` (env `CONTENT_REPO`, `HOST`/`PORT`).
+- [x] **ENG-106** (M) Documentación: `engine/README.md` reescrito (guía de
+  desarrollo completa), `docs/Guía de autor.md` (manifests, Markdown, flujo de
+  publicación), `docs/Guía de operación.md` (tokens, despliegue, releases,
+  troubleshooting, límites de la Beta).
+- Incidentes de cierre: bug `cache or RenderCache()` en `create_app` (un caché
+  vacío es falsy por `__len__` y se descartaba); duplicación de auditoría del
+  mark centralizada en el store; correcciones PLR2004/UP046/SIM105/E501 y
+  expectativas de tests (GitProviderError/MoodleError según fase del pipeline).
+
+**DoD Fase 9 — verificado (2026-10-23):** `make check` verde: ruff ✓,
+mypy strict ✓, **293 tests** ✓ (43 nuevos en la fase: export, logging,
+error recovery, render cache, integración §32). `pytest -m integration`:
+14 tests coleccionados, skipeados sin moodle-docker. Deps nuevas: structlog,
+sqlmodel (Fase 8). Docker no verificable en este entorno (sin docker): el
+entrypoint sí lo es (`build_app()` con y sin `CONTENT_REPO`).
+
+**BETA DEL ENGINE COMPLETA** (Fases 0–9, ENG-001–106). Pendiente fuera del
+engine: pista paralela 🔌 del plugin `local_courseascode` y, con él, la
+verificación E2E real (ENG-104 contra moodle-docker).
 
 ## Pista paralela 🔌 — Plugin Moodle `local_courseascode`
 
@@ -342,6 +379,25 @@ DoD). 10 skipped `integration` (sin moodle-docker 🔌).
 **Hito crítico:** tabla + `upsert_book/chapter` + token listos **antes de terminar F6**.
 
 ## Registro de sesiones
+
+### 2026-10-23 — Sesión 10: Fase 9 completa — Beta del engine terminada
+
+- **ENG-100 a ENG-106 implementados**: `export --course` (YAML estable),
+  logging structlog con correlation id, errores de despliegue recuperables
+  (registro `status="error"` + mensaje accionable + reejecución idempotente),
+  `RenderCache` por sha inmutable, suite de aceptación §32 bajo mark
+  `integration`, Dockerfile + docker-compose + `python -m courseascode.serve`,
+  y documentación completa (README del engine, Guía de autor, Guía de
+  operación).
+- Cierres hechos a mano tras la interrupción del agente: tests de logging/
+  error-recovery/render-cache (14), bug del caché descartado por falsedad en
+  `create_app`, tipado de `serve.py`, lint y docs.
+- **DoD verificado**: `make check` verde (ruff ✓, mypy strict ✓, **293 tests**
+  ✓); integración colecciona y skipea sin moodle-docker. **M4 cerrado — Beta
+  del engine completa (ENG-001–106).**
+- **Pendiente fuera del engine:** pista 🔌 del plugin `local_courseascode`
+  (tabla, web services, páginas) y la verificación E2E real contra
+  moodle-docker cuando el plugin exista.
 
 ### 2026-10-19 — Sesión 9: Fase 8 completa (releases, severidad y notificaciones)
 

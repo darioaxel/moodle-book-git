@@ -13,7 +13,8 @@ División del pipeline de §17:
   (severidad/recall, ENG-075); persistencia real en Fase 8.
 """
 
-from courseascode.deployment.executor import Executor
+from courseascode.deployment.executor import DeploymentExecutionError, Executor
+from courseascode.deployment.export import build_export, export_course
 from courseascode.deployment.hashes import (
     deserialize_hashes,
     hash_html,
@@ -28,6 +29,7 @@ from courseascode.deployment.state import StateInfo, compute_state
 __all__ = [
     "AuditableReleasePort",
     "BookStatus",
+    "DeploymentExecutionError",
     "DeploymentService",
     "DeploymentServiceError",
     "Executor",
@@ -36,8 +38,10 @@ __all__ = [
     "RecalledVersionError",
     "ReleasePort",
     "StateInfo",
+    "build_export",
     "compute_state",
     "deserialize_hashes",
+    "export_course",
     "hash_html",
     "hashes_of",
     "serialize_hashes",
