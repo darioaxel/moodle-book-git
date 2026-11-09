@@ -20,6 +20,7 @@ El engine habla con Moodle solo a través de los web services del plugin
 | Credencial | Dónde se configura | Uso |
 |---|---|---|
 | Cuenta técnica Moodle + token | `MOODLE_URL` + `MOODLE_TOKEN` | web services del plugin (capabilities mínimas, §5.3d) |
+| Conexión alternativa a Moodle | `MOODLE_CONNECT_URL` (opcional) | destino TCP distinto (forwarder en Docker con hairpin NAT roto); el header `Host` sigue siendo el de `MOODLE_URL` — Moodle exige que coincida con `$CFG->wwwroot` (si no, 303) y las URLs `pluginfile` deben generarse con el wwwroot público |
 | Token de coordinador | `COURSEASCODE_ADMIN_TOKEN` | `courseascode release mark` y `GET /audit` (rol coordinador) |
 | Secreto del webhook | `COURSEASCODE_WEBHOOK_SECRET` | firma HMAC de `POST /hooks/git` (header `X-CourseAsCode-Signature: sha256=<hex>`) |
 

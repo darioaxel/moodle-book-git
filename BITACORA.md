@@ -16,7 +16,7 @@ Fases y IDs según la tasklist del engine (`ENG-nnn`). El plugin Moodle
 
 ## Estado resumido
 
-**Fase actual:** 9 — Export, robustez y entrega ✅ (2026-10-23) · **Beta engine completa** 🎉 · Pista 🔌 del plugin: esqueleto + 9 web services ✅ (2026-10-23); pendiente verificación con Moodle real y páginas UI completas
+**Fase actual:** 9 — Export, robustez y entrega ✅ (2026-10-23) · **Beta engine completa** 🎉 · Pista 🔌 del plugin: esqueleto + 9 web services ✅ + páginas UI ✅ · **E2E real verificado contra Moodle de pruebas** (2026-11-09: ciclo import/update/rollback completo, PRU-030/031/032)
 
 | Milestone | Contenido | Estado |
 |---|---|---|
@@ -382,8 +382,9 @@ verificación E2E real (ENG-104 contra moodle-docker).
   `null` si no hay despliegue; `upload_asset` ya no borra los demás assets).
 - [x] Capabilities (`:deploy`, `:viewcatalog` en curso; `:manage` en sistema) +
   inyección de CSS solo en `mod-book-view` + hook de navegación de curso.
-- [ ] Páginas UI (catálogo, página de versión, panel de administración):
-  🟡 esqueletos con templates Mustache; falta presentación completa.
+- [x] Páginas UI completas (2026-11-06): catálogo (§12.2), página de versión
+  con estado §19, diff §22 y confirmación de deploy (§17.1/§17.2), acción
+  `deploy.php` (POST /deploy) y panel del curso (§23.1) con estado por Book.
 - [ ] Verificación con Moodle real: `php -l`, instalación y smoke de los web
   services contra moodle-docker (este entorno no tiene PHP).
 
@@ -392,6 +393,144 @@ verificación E2E real (ENG-104 contra moodle-docker).
 operación. La validación real requiere moodle-docker (pendiente).
 
 ## Registro de sesiones
+
+### 2026-11-09 — Sesión 15: Ciclo E2E completo contra Moodle real 🎉
+
+**Primera verificación extremo a extremo del sistema contra el Moodle de
+pruebas (PRU-006/014/030/031/032).**
+
+- **Engine reconstruido con `MOODLE_CONNECT_URL`**: alcanza al Moodle vía el
+  forwarder socat con Host = wwwroot. Suite local verde antes del despliegue
+  (297 tests, ruff ✓, mypy strict ✓).
+- **Cadena engine→plugin verificada**. Errores encontrados y resueltos:
+  1. `svc-courseascode` "no completamente configurado": le faltaban los
+     campos de perfil obligatorios del sitio (`cod_centro`, `centro`) —
+     rellenados con valores de prueba.
+  2. El servicio externo `courseascode` no incluía `core_course_get_courses`
+     (la usa el engine, §5.3b) — añadida al servicio.
+  3. **Bug plugin vs Moodle 6.0**: `add_module`/`update_module` ya no existen
+     → migrado a `add_moduleinfo`/`update_moduleinfo` en `book_helper`.
+  4. **Bug plugin**: en el update hay que pasar el intro como `introeditor`
+     (Moodle 6 lo pisa a null si viene como `intro` plano y el UPDATE falla).
+  5. **Bug plugin vs contrato**: `get_book` lanzaba excepción si el bookid no
+     existe; el contrato dice "null" (lo usan planner y drift §19.1) — ahora
+     devuelve estructura vacía, patrón de `get_deploy`.
+  6. Registro de deploy envenenado (`bookid=0`) del primer intento fallido —
+     eliminado.
+- **Ciclo §32 contra Moodle real**: importación v1.0.0 → `UP_TO_DATE` (Book
+  visible en sección 2 de CAC-TEST, 5 capítulos mapeados); redeploy
+  idempotente (0 acciones); v1.1.0 publicada en `contenidos-test` →
+  `UPDATE_AVAILABLE` ("disponible: 1.1.0"); plan muestra el diff §22
+  (`~ 02-mvc.md`, `+ 06-recursos.md`); update aplica UPDATE+CREATE; rollback
+  a v1.0.0 omite el DELETE sin confirmación (warning §17.2) y lo aplica con
+  `confirmed_deletions`; `where_deployed` → `[2]`. Las **9 funciones** del
+  contrato ejercitadas en vivo.
+- **Pendiente**: probar la UI del plugin con un profesor real (PRU-020,
+  esperando datos), hotfix critical/recall (PRU-033), drift (PRU-034),
+  export (PRU-035) y `make test-integration` contra este Moodle (PRU-036).
+
+### 2026-11-06 — Sesión 14: Despliegue alpha en el Moodle de pruebas (primera aproximación)
+
+**Hecho y verificado:**
+
+- Acceso SSH root a `192.168.2.253`. Moodle = contenedor `moodle53beta-moodle`
+  (¡es **6.0dev** Build 20261021, no 5.3!) + MariaDB; red interna docker
+  `8088-...moodle-internal`. Curso existente: `CAC-TEST` (id 2); usuarios:
+  solo `admin` y `svc-courseascode` (los datos los carga el equipo).
+- **Plugin instalado y actualizado** a 2026110600 (rsync al bind mount +
+  `php -l` verde + `admin/cli/upgrade.php --allow-unstable`). `config.php`
+  configurado con `local_courseascode_service_url` (interna,
+  `http://courseascode:8000`) y `service_public_url` (`http://192.168.2.253:8090`).
+  ⚠️ `config.php` no es bind mount: efímero si se recrea el contenedor.
+- **Web services**: ya existían (REST + servicio `courseascode` 9 funciones +
+  token de `svc-courseascode`); rol `courseascodesvc` completado con
+  `webservice/rest:use`, `course:view/update/manageactivities`,
+  `mod/book:read/edit`.
+- **Engine desplegado**: contenedor `courseascode-engine` (imagen construida
+  en el servidor), volumen `courseascode-data`, clon de `contenidos-test` en
+  `/content`. `GET /catalog` responde con `@dwes/ut03-mvc` v1.0.0 ✅.
+
+**Bugs reales encontrados y corregidos (engine):**
+
+1. `default_db_url()` no aceptaba rutas peladas (`/data/courseascode.db`, el
+   default del propio Dockerfile) → SQLAlchemy `ArgumentError`. Ahora convierte
+   ruta → `sqlite:///`.
+2. Dockerfile sin `git` (LocalGitProvider usa `git worktree` por CLI) y sin
+   `safe.directory` para `/content` → `dubious ownership` y luego
+   `Permission denied` en `.git/worktrees` (resuelto además con chown 1000 del
+   clon en el host; los fetch de tags deben hacerse **dentro** del contenedor).
+3. El plugin enlazaba `/static/theme-default.css` para inyectar el CSS en
+   `mod-book-view` y **el endpoint no existía** → añadido
+   `GET /static/{tema}.css` (+2 tests).
+4. Hairpin NAT roto en el host (los contenedores no alcanzan los puertos
+   publicados del propio host) + Moodle exige Host = `$CFG->wwwroot` (303 si
+   no) → `MoodleRestClient` admite ahora `connect_url` (`MOODLE_CONNECT_URL`)
+   que conecta al forwarder `cac-moodle-fwd` (socat 192.168.96.10:8088) con
+   header Host = wwwroot público (+2 tests). **Rebuild del engine en el
+   servidor PENDIENTE** (interrumpido antes de redesplegar; suite local:
+   ruff ✓, mypy ✓, tests del cliente REST ✓; suite completa por re-correr).
+
+**Incidencia aislada (NO fue el proyecto):** caída del Moodle (500 en
+login/admin) causada por `local/educaaragon` — copiado al contenedor el mismo
+día 12:24 por el equipo — que redeclara `clean_string()` del core
+(`weblib.php:775`). Fix en caliente en el contenedor (renombrada a
+`educaaragon_clean_string`, declaración + 6 llamadas) → login 200 de nuevo.
+⚠️ Efímero: educaaragon no es bind mount; el fix debe subir a su repo.
+
+**Diagnóstico:** con debugdisplay los errores llegan a la página; se dejó
+`debug=32767`/`debugdisplay=1` en la BD del Moodle (útil en alpha; el aviso de
+deprecación del hook legacy `before_standard_html_head` del plugin saldrá en
+pantalla — migración al nuevo hook de Moodle 6 pendiente).
+
+### 2026-11-06 — Sesión 13: Pruebas alpha — preparación del entorno
+
+- Estudiado `docs/Sistema-prueba.md` y creada la tasklist
+  `docs/Tasklist — Pruebas alpha.md` (PRU-001–036): infraestructura,
+  contenidos, usuarios/roles y ciclo E2E §32 contra Moodle real.
+- **Servidor Moodle localizado**: `http://192.168.2.253:8088` (responde por
+  **http**, no https como decía el documento; https no escucha). Sitio
+  "Moodle53Beta" operativo (login 200).
+- **Repo `FPVirtual/contenidos-test` sembrado** (estaba vacío): `course.yml`
+  (dwes) + book `ut03-mvc` (5 capítulos, SVG, admonitions, enlaces internos)
+  + README. `courseascode validate` en verde; tag `book/ut03-mvc/v1.0.0`
+  publicado y pusheado; `courseascode info` resuelve `@dwes/ut03-mvc` v1.0.0.
+  Clon local en `~/Proyectos/contenidos-test`.
+- **Bloqueante (PRU-001)**: sin credenciales de administrador del Moodle no se
+  puede instalar el plugin ni comprobar los profesores del curso DWES.
+
+### 2026-11-06 — Sesión 12: Pista 🔌 — páginas UI del plugin completas
+
+- **Catálogo (`catalog.php`, §12.2)**: tarjetas por fuente con título,
+  summary, tags, audience, nº de capítulos, última versión, preview
+  (ENG-044, mismo renderer que el deploy) y "Añadir al curso" solo con
+  `:deploy` + `moodle/course:manageactivities` (§12.3). Corregido el campo
+  del JSON: el catálogo expone `source`, no `name`.
+- **Página de versión (`bookversion.php`, §21/§22)**: estado §19 con badge
+  de severidad (§11), metadata Git solo para profesores (capability
+  `viewcatalog`), binding local (`deployed_at`, `deployed_by`, commit),
+  lista de versiones desc con preview por tag, y "Ver cambios" →
+  `POST /deployment/plan`: diff estructural §17.1, avisos, eliminaciones
+  con checkbox de confirmación explícita (§17.2) y formulario de deploy.
+- **`deploy.php` nuevo (§12.3 paso 4)**: solo POST (`data_submitted()`),
+  capabilities `:deploy` + `manageactivities`, `POST /deploy` del engine y
+  redirect con notificación de éxito/error (mensajes accionables del
+  engine; 409 RECALLED se muestra tal cual — el `force` queda en la CLI
+  del coordinador, documentado en el README).
+- **Panel del curso (`admin.php`, §23.1)**: tabla Book / Published /
+  Available / Estado / Acciones desde el binding local + `GET
+  /deployment/status` por Book (tolerante a fallos por Book), enlace "Ver
+  en el curso" vía `book_helper::coursemodule_id` y botón "Actualizar"
+  directo al plan cuando hay `UPDATE_AVAILABLE`.
+- **`lib.php`**: `service_request` genérico con chequeo de status HTTP
+  (los errores del engine llegan como `{"detail": ...}`), `service_post`,
+  `preview_url`, `course_deploys` (último binding por Book), `book_state`
+  tolerante a fallos y helpers de badge `state_label`/`state_class`.
+  Entrada del panel en la navegación del curso para deployers.
+- Templates Mustache reescritos (Bootstrap 5: `badge bg-*`), 30 strings
+  nuevos en `lang/en`, version bump a 2026110600 (release 0.2.0).
+- **No verificable en este entorno** (sin PHP): `php -l` y el smoke E2E
+  contra moodle-docker siguen pendientes — incluye renderizado real de los
+  templates.
 
 ### 2026-10-23 — Sesión 11: Pista 🔌 — esqueleto del plugin `local_courseascode` (Moodle 5.3)
 
