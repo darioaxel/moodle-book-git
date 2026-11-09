@@ -300,3 +300,21 @@ def test_mapeo_funciones_cubre_operaciones() -> None:
     for key, function in PLUGIN_FUNCTIONS.items():
         if key != "get_course":
             assert function.name.startswith("local_courseascode_")
+
+
+def test_connect_url_conecta_al_forwarder_con_host_publico() -> None:
+    # Redes Docker con hairpin NAT roto: la TCP va al forwarder pero el Host
+    # sigue siendo el wwwroot público (Moodle redirige 303 si no coincide).
+    client = MoodleRestClient(
+        "http://192.168.2.253:8088",
+        TOKEN,
+        retries=RetryPolicy.disabled(),
+        connect_url="http://192.168.96.10:8088",
+    )
+    assert str(client._client.base_url) == "http://192.168.96.10:8088"
+    assert client._client.headers["host"] == "192.168.2.253:8088"
+
+
+def test_sin_connect_url_no_se_sobrescribe_host() -> None:
+    client = MoodleRestClient(BASE_URL, TOKEN, retries=RetryPolicy.disabled())
+    assert "host" not in client._client.headers

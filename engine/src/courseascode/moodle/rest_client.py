@@ -62,7 +62,7 @@ class RetryPolicy:
 class MoodleRestClient(MoodleProvider):
     """Habla con Moodle real a través de los web services del plugin (ENG-061)."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - superficie de configuración del cliente
         self,
         base_url: str,
         token: str,
@@ -70,10 +70,26 @@ class MoodleRestClient(MoodleProvider):
         timeout: float = 10.0,
         retries: RetryPolicy | None = None,
         client: httpx.Client | None = None,
+        connect_url: str | None = None,
     ) -> None:
         self._token = token
         self._retry = retries or RetryPolicy()
-        self._client = client or httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
+        if client is not None:
+            self._client = client
+        elif connect_url is not None:
+            # La conexión TCP va a ``connect_url`` (p. ej. un forwarder en la
+            # red Docker) pero el Host sigue siendo el wwwroot público: Moodle
+            # redirige (303) cualquier petición cuyo Host no coincida con
+            # $CFG->wwwroot, y las URLs pluginfile que genera deben usar el
+            # wwwroot público para que funcionen en los navegadores.
+            netloc = httpx.URL(base_url).netloc.decode()
+            self._client = httpx.Client(
+                base_url=connect_url.rstrip("/"),
+                timeout=timeout,
+                headers={"Host": netloc},
+            )
+        else:
+            self._client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
         self._sleep: Callable[[float], None] = time.sleep
 
     # -- núcleo HTTP --------------------------------------------------------------

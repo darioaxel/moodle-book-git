@@ -253,6 +253,24 @@ def create_app(  # noqa: PLR0913, PLR0917 - superficie de configuración de la a
         """Página completa de un capítulo con TOC y selector de ref/tema."""
         return _chapter_page(ctx, book_id, chapter_id, ref, theme_name)
 
+    @app.get("/static/{theme_name}.css")
+    def theme_css(theme_name: str) -> Response:
+        """CSS del tema empaquetado (§14), para la inyección del plugin 🔌 en
+        las páginas ``mod-book-view`` (§5.3d): el HTML desplegado no lleva el
+        CSS inline, así que Moodle enlaza esta hoja de estilo."""
+        if not re.fullmatch(r"theme-[a-z0-9-]+", theme_name):
+            raise HTTPException(status_code=404, detail=f"tema inválido: {theme_name!r}")
+        try:
+            theme = load_theme(theme_name)
+        except OSError as exc:
+            detail = f"tema no encontrado: {theme_name!r}"
+            raise HTTPException(status_code=404, detail=detail) from exc
+        return Response(
+            content=theme.css,
+            media_type="text/css",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
     @app.get("/catalog")
     def catalog_index(
         caller: Annotated[str | None, Header(alias="X-CourseAsCode-User")] = None,

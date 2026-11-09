@@ -2,6 +2,12 @@
 
 FROM python:3.12-slim
 
+# git: LocalGitProvider usa el CLI (`git worktree add`, ENG-021); GitPython
+# también necesita el binario.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     # Defaults de desarrollo; sobrescribir en despliegue real.
@@ -22,6 +28,10 @@ RUN useradd --create-home courseascode \
     && mkdir -p /data \
     && chown -R courseascode:courseascode /data /srv/courseascode
 USER courseascode
+
+# El repo de contenidos se monta en /content con otro propietario (host):
+# sin esta excepción git rechaza operar sobre él ("dubious ownership").
+RUN git config --global --add safe.directory /content
 VOLUME ["/data"]
 
 EXPOSE 8000

@@ -39,7 +39,10 @@ def build_app() -> FastAPI:
     url = os.environ.get("MOODLE_URL")
     token = os.environ.get("MOODLE_TOKEN")
     if url and token:
-        moodle = MoodleRestClient(url.rstrip("/"), token)
+        # MOODLE_CONNECT_URL (opcional): destino TCP alternativo para redes con
+        # hairpin NAT roto (Docker); el Host sigue siendo el de MOODLE_URL.
+        connect_url = os.environ.get("MOODLE_CONNECT_URL")
+        moodle = MoodleRestClient(url.rstrip("/"), token, connect_url=connect_url)
 
     return create_app(
         Path(content_repo),

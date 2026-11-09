@@ -258,3 +258,16 @@ def test_preview_cli_repo_suelto_sin_git(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.chdir(tmp_path / "suelto")
     result = runner.invoke(cli_app, ["preview", "ut03-mvc"])
     assert result.exit_code == 0, result.output
+
+
+def test_static_theme_css(wt_client: TestClient) -> None:
+    # El plugin inyecta esta hoja en mod-book-view (§5.3d).
+    response = wt_client.get("/static/theme-default.css")
+    assert response.status_code == HTTP_OK
+    assert response.headers["content-type"].startswith("text/css")
+    assert ".courseascode" in response.text or "theme-default" in response.text
+
+
+def test_static_theme_css_tema_inexistente_404(wt_client: TestClient) -> None:
+    assert wt_client.get("/static/theme-nope.css").status_code == HTTP_NOT_FOUND
+    assert wt_client.get("/static/...evil.css").status_code == HTTP_NOT_FOUND

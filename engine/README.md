@@ -62,9 +62,10 @@ Endpoints principales: `/` (índice de books), `/books/{id}/{capítulo}`,
 | Variable | Default | Para qué |
 |---|---|---|
 | `MOODLE_URL` / `MOODLE_TOKEN` | — (obligatorias para hablar con Moodle) | cuenta técnica del plugin |
+| `MOODLE_CONNECT_URL` | — | destino TCP alternativo para Moodle (forwarder en redes Docker con hairpin NAT roto); el header `Host` sigue siendo el de `MOODLE_URL` — Moodle exige que coincida con `$CFG->wwwroot` |
 | `CONTENT_REPO_URL` / `CONTENT_REPO_KEY` | — | repo remoto de contenidos (provisional, §25) |
 | `CONTENT_REPO` | — | ruta local del repo que sirve `python -m courseascode.serve` |
-| `COURSEASCODE_DB` | `~/.courseascode/courseascode.db` | releases y auditoría (ENG-090) |
+| `COURSEASCODE_DB` | `~/.courseascode/courseascode.db` | releases y auditoría (ENG-090); acepta URL `sqlite:///…` o ruta de archivo pelada |
 | `COURSEASCODE_ADMIN_TOKEN` | — | rol coordinador: `release mark`, `GET /audit` |
 | `COURSEASCODE_WEBHOOK_SECRET` | — | firma HMAC de `POST /hooks/git` (sin él, 503) |
 | `COURSEASCODE_LOG_FORMAT` | `console` | `json` en producción; correlation id por operación |

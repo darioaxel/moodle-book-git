@@ -38,8 +38,16 @@ DEFAULT_DB_URL = f"sqlite:///{DEFAULT_DB_PATH}"
 
 
 def default_db_url() -> str:
-    """URL de la BD por defecto: ``COURSEASCODE_DB`` o ``~/.courseascode/``."""
-    return os.environ.get("COURSEASCODE_DB") or DEFAULT_DB_URL
+    """URL de la BD por defecto: ``COURSEASCODE_DB`` o ``~/.courseascode/``.
+
+    Acepta tanto una URL SQLAlchemy (``sqlite:////data/courseascode.db``) como
+    una ruta de archivo pelada (``/data/courseascode.db``, el default del
+    Dockerfile), que se convierte a URL absoluta.
+    """
+    value = os.environ.get("COURSEASCODE_DB") or DEFAULT_DB_URL
+    if not value.startswith("sqlite:///"):
+        value = f"sqlite:///{Path(value).expanduser().resolve()}"
+    return value
 
 
 class ReleaseStoreError(RuntimeError):
