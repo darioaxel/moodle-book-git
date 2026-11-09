@@ -38,6 +38,9 @@ class book_helper {
     /**
      * Crea o actualiza la instancia mod_book del curso (idempotente por nombre).
      *
+     * Usa `add_moduleinfo`/`update_moduleinfo` (Moodle 5+/6: `add_module` y
+     * `update_module` ya no existen).
+     *
      * @return int id de la instancia mod_book (el "bookid" del contrato)
      */
     public static function upsert_book_instance(int $courseid, string $name, string $intro, string $numbering): int {
@@ -45,27 +48,33 @@ class book_helper {
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/book/locallib.php');
 
+        $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
         $book = $DB->get_record('book', ['course' => $courseid, 'name' => $name]);
-        $data = (object) [
+        $moduleinfo = (object) [
+            'modulename' => 'book',
+            'module' => $DB->get_field('modules', 'id', ['name' => 'book'], MUST_EXIST),
+            'course' => $courseid,
+            'section' => 0,
+            'visible' => 1,
             'name' => $name,
             'intro' => $intro,
             'introformat' => FORMAT_HTML,
             'numbering' => self::NUMBERING[$numbering] ?? 1,
-            'course' => $courseid,
-            'module' => $DB->get_field('modules', 'id', ['name' => 'book'], MUST_EXIST),
-            'modulename' => 'book',
-            'section' => 0,
-            'visible' => 1,
         ];
         if ($book) {
-            $data->id = $book->id;
-            $data->coursemodule = self::coursemodule_id($book->id);
-            update_module($data);
+            $cmid = self::coursemodule_id($book->id);
+            $cm = get_coursemodule_from_id('book', $cmid, 0, false, MUST_EXIST);
+            $moduleinfo->id = $book->id;
+            $moduleinfo->coursemodule = $cmid;
+            $moduleinfo->cmidnumber = $cm->idnumber;
+            // update_moduleinfo exige el intro como editor (Moodle 6): sin
+            // introeditor pisa intro/introformat a null y el UPDATE falla.
+            $moduleinfo->introeditor = ['text' => $intro, 'format' => FORMAT_HTML, 'itemid' => 0];
+            update_moduleinfo($cm, $moduleinfo, $course);
             return $book->id;
         }
-        $data->instance = '';
-        $data->coursemodule = 0;
-        $created = add_module($data);
+        $moduleinfo->coursemodule = 0;
+        $created = add_moduleinfo($moduleinfo, $course);
         return (int) $created->instance;
     }
 

@@ -29,7 +29,13 @@ class get_book extends \external_api {
     public static function execute(int $bookid): array {
         global $DB;
         $params = self::validate_parameters(self::execute_parameters(), ['bookid' => $bookid]);
-        $book = book_helper::get_book_instance($params['bookid']);
+
+        // Contrato (functions.py): null si el bookid no existe — el engine lo
+        // usa para detectar "book borrado a mano" (drift §19.1), no es error.
+        $book = $DB->get_record('book', ['id' => $params['bookid']]);
+        if (!$book) {
+            return [];
+        }
         $context = \context_course::instance($book->course);
         self::validate_context($context);
         require_capability('local/courseascode:viewcatalog', $context);
@@ -74,23 +80,25 @@ class get_book extends \external_api {
     }
 
     public static function execute_returns(): \external_single_structure {
+        // Todos opcionales: la respuesta vacía (book inexistente) serializa
+        // como [] → null en el engine (mismo patrón que get_deploy).
         return new \external_single_structure([
-            'bookid' => new \external_value(PARAM_INT, 'id de la instancia mod_book'),
-            'courseid' => new \external_value(PARAM_INT, 'Curso Moodle'),
-            'name' => new \external_value(PARAM_TEXT, 'Título del Book'),
-            'intro' => new \external_value(PARAM_RAW, 'Introducción (HTML)'),
-            'numbering' => new \external_value(PARAM_ALPHAEXT, 'none|numbers|bullets|indented'),
+            'bookid' => new \external_value(PARAM_INT, 'id de la instancia mod_book', VALUE_OPTIONAL),
+            'courseid' => new \external_value(PARAM_INT, 'Curso Moodle', VALUE_OPTIONAL),
+            'name' => new \external_value(PARAM_TEXT, 'Título del Book', VALUE_OPTIONAL),
+            'intro' => new \external_value(PARAM_RAW, 'Introducción (HTML)', VALUE_OPTIONAL),
+            'numbering' => new \external_value(PARAM_ALPHAEXT, 'none|numbers|bullets|indented', VALUE_OPTIONAL),
             'assets' => new \external_multiple_structure(new \external_single_structure([
                 'filename' => new \external_value(PARAM_FILE, 'Nombre del asset'),
                 'sha256' => new \external_value(PARAM_ALPHANUMEXT, 'SHA-256 del contenido'),
-            ]), 'Assets del Book'),
+            ]), 'Assets del Book', VALUE_OPTIONAL),
             'chapters' => new \external_multiple_structure(new \external_single_structure([
                 'stable_id' => new \external_value(PARAM_TEXT, 'id estable del capítulo'),
                 'title' => new \external_value(PARAM_TEXT, 'Título'),
                 'content_html' => new \external_value(PARAM_RAW, 'HTML actual (detección de drift §19.1)'),
                 'position' => new \external_value(PARAM_INT, 'posición 1-based'),
                 'url' => new \external_value(PARAM_URL, 'URL de vista del capítulo (enlaces internos §16)'),
-            ]), 'Capítulos por stable id, en orden'),
+            ]), 'Capítulos por stable id, en orden', VALUE_OPTIONAL),
         ]);
     }
 }

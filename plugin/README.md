@@ -18,10 +18,21 @@ Pensado para **Moodle 5.3+** (`$plugin->requires = 2026100600`).
 - Registra cada despliegue (tabla `local_courseascode_deploy`), de modo que un
   `Book` se identifica por `(courseid, source, content_id)`: `where_deployed`
   devuelve dónde está publicado cada contenido.
-- Añade una capa de visualización:
-  - Catálogo del servicio (`/local/courseascode/catalog.php`).
-  - Versiones de un libro (`/local/courseascode/bookversion.php`).
-  - Estado de despliegue del sitio (`/local/courseascode/admin.php`).
+- Añade una capa de visualización completa:
+  - Catálogo del servicio (`/local/courseascode/catalog.php`, §12.2): tarjetas
+    por fuente con resumen, tags, nº de capítulos, última versión, preview
+    (ENG-044) y acceso a "Añadir al curso".
+  - Página de versión de un Book (`/local/courseascode/bookversion.php`, §21):
+    estado §19 con badge de severidad (§11), metadata Git (solo profesores),
+    lista de versiones con preview y "Ver cambios" (diff estructural §22 vía
+    `POST /deployment/plan`), con confirmación de deploy — incluida la
+    confirmación explícita de eliminaciones (§17.2).
+  - Acción de despliegue (`/local/courseascode/deploy.php`): solo POST con
+    sesskey, exige `local/courseascode:deploy` + `moodle/course:manageactivities`
+    (§12.3) y ejecuta `POST /deploy` del servicio.
+  - Panel del curso (`/local/courseascode/admin.php`, §23.1): Books
+    desplegados con versión publicada/disponible, estado §19 por Book y
+    acciones (ver en el curso, preview, actualizar).
   - CSS inyectado solo en páginas `mod-book-view` vía
     `local_courseascode_before_standard_html_head()` para estilizar el
     contenido desplegado.
@@ -46,14 +57,21 @@ Pensado para **Moodle 5.3+** (`$plugin->requires = 2026100600`).
 En `config.php` (o equivalente):
 
 ```php
-$CFG->local_courseascode_service_url   = 'http://courseascode-service:8080';
-$CFG->local_courseascode_service_token = '<token del usuario técnico>'; // opcional
+$CFG->local_courseascode_service_url        = 'http://courseascode-service:8080';
+$CFG->local_courseascode_service_public_url = 'http://moodle.example.com:8090'; // opcional
+$CFG->local_courseascode_service_token      = '<token del usuario técnico>';   // opcional
 ```
 
-- `_service_url`: base del servicio Course as Code (lo que el engine expone en
-  `/catalog`, `/catalog/{source}/{book}/versions` y `/deployment/status`). Si
-  no está definido, las páginas del plugin muestran un aviso
-  (`servicenotconfigured`) en lugar de fallar.
+- `_service_url`: base del servicio Course as Code para las llamadas
+  **server-to-server** (lo que el engine expone en `/catalog`,
+  `/catalog/{source}/{book}/versions`, `/deployment/*`). Si no está definido,
+  las páginas del plugin muestran un aviso (`servicenotconfigured`) en lugar
+  de fallar.
+- `_service_public_url`: base del servicio para los enlaces que abre el
+  **navegador** del usuario (preview de Books, CSS del tema en
+  `mod-book-view`). En despliegues donde el servicio vive en una red interna
+  (Docker), la URL interna no resuelve para el profesor: definir aquí la URL
+  pública. Si no se define, se usa `_service_url`.
 - `_service_token`: se envía como cabecera `X-CourseAsCode-User` en las
   llamadas del servidor a ese servicio.
 
@@ -93,5 +111,8 @@ Moodle 5.x (`local_courseascode\external\<nombre>`), declaradas en
   parser exige la clave ausente o `null`, ajustar la respuesta.
 - `php -l` y pruebas de integración contra un Moodle real (moodle-docker):
   **este entorno no tiene PHP**; queda para el entorno con Moodle.
-- Páginas UI (`catalog.php`, `bookversion.php`, `admin.php`): actualmente son
-  esqueletos con sus templates Mustache; completar la presentación.
+- Versiones RECALLED (§11): la UI muestra el 409 del engine con su mensaje;
+  el despliegue forzado (`force: true`) queda solo en la CLI del coordinador,
+  sin botón en la web.
+- Selección de sección del curso al añadir un Book (§12.3 paso 3): el contrato
+  `POST /deploy` de la Beta no la admite; los Books se crean en la sección 0.
