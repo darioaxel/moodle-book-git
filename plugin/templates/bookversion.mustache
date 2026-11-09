@@ -1,20 +1,126 @@
 {{!
-    Página de versión del Book (§21). Espera: courseid, source, book,
-    versions[] (version, tag), candeploy (bool). El despliegue real se hará
-    con POST /deploy desde este curso (botón pendiente de post-Beta).
+    Página de versión del Book (§21): estado §19 con severidad §11, metadata
+    Git (solo profesores), plan §17.1/§22 de la versión candidata con
+    confirmación de deploy, y lista de versiones taggeadas.
 }}
 <div class="local-courseascode-bookversion">
-    <h3>@{{source}}/{{book}}</h3>
-    <ul class="list-group mb-3">
-        {{#versions}}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-                <span>v{{version}} <small class="text-muted">{{tag}}</small></span>
-                <a class="btn btn-sm btn-secondary" target="_blank"
-                   href="{{preview_url}}?ref={{tag}}">{{#str}} preview {{/str}}</a>
-            </li>
-        {{/versions}}
-    </ul>
-    {{#candeploy}}
-        <p class="text-muted">Deploy/Compare/Rollback desde este curso: post-Beta (POST /deploy, §5.4).</p>
-    {{/candeploy}}
+    <p>
+        <a href="{{catalogurl}}">&laquo; {{#str}} catalog, local_courseascode {{/str}}</a>
+        · <a href="{{adminurl}}">{{#str}} admin, local_courseascode {{/str}}</a>
+    </p>
+    <h3>{{title}}</h3>
+    <p class="text-muted">{{#str}} content, local_courseascode {{/str}}: <code>{{contentid}}</code></p>
+
+    {{#hasstatus}}
+        <div class="alert alert-{{stateclass}}">
+            <strong>{{statelabel}}</strong>
+            {{#iscritical}}<span class="badge bg-danger ms-1">{{#str}} critical, local_courseascode {{/str}}</span>{{/iscritical}}
+            {{#statedetail}}<br><small>{{statedetail}}</small>{{/statedetail}}
+        </div>
+    {{/hasstatus}}
+
+    {{#hasdeploy}}
+        <table class="table table-sm w-auto">
+            <tbody>
+                <tr>
+                    <th>{{#str}} publishedversion, local_courseascode {{/str}}</th>
+                    <td>v{{deployedversion}}</td>
+                </tr>
+                <tr>
+                    <th>{{#str}} gitcommit, local_courseascode {{/str}}</th>
+                    <td><code>{{gitcommit}}</code></td>
+                </tr>
+                <tr>
+                    <th>{{#str}} publishedat, local_courseascode {{/str}}</th>
+                    <td>{{deployedat}}</td>
+                </tr>
+                <tr>
+                    <th>{{#str}} deployedby, local_courseascode {{/str}}</th>
+                    <td>{{deployedby}}</td>
+                </tr>
+            </tbody>
+        </table>
+    {{/hasdeploy}}
+
+    {{#plan}}
+        <div class="card mb-3 border-primary" id="plan">
+            <div class="card-body">
+                <h5 class="card-title">
+                    {{#str}} changes, local_courseascode {{/str}}:
+                    v{{current}} &rarr; v{{target}}
+                </h5>
+                {{#haschanges}}
+                    <ul class="list-unstyled font-monospace mb-2">
+                        {{#changes}}<li>{{change}}</li>{{/changes}}
+                    </ul>
+                {{/haschanges}}
+                {{^haschanges}}
+                    <p class="text-muted">{{#str}} nochanges, local_courseascode {{/str}}</p>
+                {{/haschanges}}
+                {{#haswarnings}}
+                    <div class="alert alert-warning mb-2">
+                        {{#warnings}}<div>&#9888; {{warning}}</div>{{/warnings}}
+                    </div>
+                {{/haswarnings}}
+                {{#hasdeletions}}
+                    <div class="alert alert-danger mb-2">
+                        {{#str}} deletionswarning, local_courseascode {{/str}}
+                        <ul class="mb-0">
+                            {{#deletions}}<li>{{title}} <code>{{stable_id}}</code></li>{{/deletions}}
+                        </ul>
+                    </div>
+                {{/hasdeletions}}
+                {{#candeploy}}
+                    <form method="post" action="{{deployurl}}">
+                        <input type="hidden" name="sesskey" value="{{sesskey}}">
+                        <input type="hidden" name="id" value="{{courseid}}">
+                        <input type="hidden" name="source" value="{{source}}">
+                        <input type="hidden" name="book" value="{{book}}">
+                        <input type="hidden" name="version" value="{{version}}">
+                        {{#hasdeletions}}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="confirmdeletions"
+                                       name="confirmdeletions" value="1" required>
+                                <label class="form-check-label" for="confirmdeletions">
+                                    {{#str}} confirmdeletions, local_courseascode {{/str}}
+                                </label>
+                            </div>
+                        {{/hasdeletions}}
+                        <button type="submit" class="btn btn-primary">
+                            {{#str}} deploy, local_courseascode {{/str}} v{{target}}
+                        </button>
+                    </form>
+                {{/candeploy}}
+            </div>
+        </div>
+    {{/plan}}
+
+    <h4>{{#str}} versions, local_courseascode {{/str}}</h4>
+    {{#hasversions}}
+        <ul class="list-group mb-3">
+            {{#versions}}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>
+                        v{{version}}
+                        {{#iscurrent}}
+                            <span class="badge bg-success">{{#str}} deployed, local_courseascode {{/str}}</span>
+                        {{/iscurrent}}
+                        <br><small class="text-muted"><code>{{tag}}</code></small>
+                    </span>
+                    <span>
+                        <a class="btn btn-sm btn-secondary" target="_blank" rel="noopener"
+                           href="{{previewurl}}">{{#str}} preview, local_courseascode {{/str}}</a>
+                        {{#candeploy}}
+                            <a class="btn btn-sm btn-outline-primary" href="{{planurl}}">
+                                {{#str}} viewchanges, local_courseascode {{/str}}
+                            </a>
+                        {{/candeploy}}
+                    </span>
+                </li>
+            {{/versions}}
+        </ul>
+    {{/hasversions}}
+    {{^hasversions}}
+        <p class="text-muted">{{#str}} noversions, local_courseascode {{/str}}</p>
+    {{/hasversions}}
 </div>

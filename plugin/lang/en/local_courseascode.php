@@ -25,5 +25,45 @@ $string['addtocourse'] = 'Add to course';
 $string['chaptercount'] = 'Chapters';
 $string['latest'] = 'Latest version';
 $string['version'] = 'Version';
+$string['versions'] = 'Versions';
 $string['servicenotconfigured'] = 'The courseascode service is not configured. Set $CFG->local_courseascode_service_url (see README).';
 $string['servicerror'] = 'The courseascode service returned an error: {$a}';
+
+// Catalog page (§12.2).
+$string['catalogempty'] = 'There are no sources visible for you in the catalog.';
+$string['nobooksinsource'] = 'This source has no released books yet.';
+
+// Book version page (§21) and plan (§17.1, §22).
+$string['content'] = 'Content';
+$string['publishedversion'] = 'Published version';
+$string['availableversion'] = 'Available';
+$string['gitcommit'] = 'Git commit';
+$string['publishedat'] = 'Published';
+$string['deployedby'] = 'Deployed by';
+$string['deployed'] = 'Deployed';
+$string['deploy'] = 'Deploy';
+$string['update'] = 'Update';
+$string['changes'] = 'Changes';
+$string['nochanges'] = 'No content changes: the deployment is already up to date.';
+$string['viewchanges'] = 'View changes';
+$string['critical'] = 'CRITICAL';
+$string['deletionswarning'] = 'This deployment will delete the following chapters from the Moodle book:';
+$string['confirmdeletions'] = 'I understand that those chapters will be permanently deleted from this course.';
+$string['deploysuccess'] = 'Version {$a} deployed successfully.';
+$string['deployfailed'] = 'The deployment failed: {$a}';
+$string['noversions'] = 'This book has no tagged versions.';
+
+// Course panel (§23.1).
+$string['state'] = 'State';
+$string['actions'] = 'Actions';
+$string['viewincourse'] = 'View in course';
+$string['nobooksdeployed'] = 'This course has no Course as Code books yet.';
+$string['gotocatalog'] = 'Go to the catalog';
+
+// Deployment states (§19).
+$string['state_not_deployed'] = 'Not deployed';
+$string['state_up_to_date'] = 'Up to date';
+$string['state_update_available'] = 'Update available';
+$string['state_drift_detected'] = 'Manual changes detected';
+$string['state_deploying'] = 'Deploying';
+$string['state_error'] = 'Error';

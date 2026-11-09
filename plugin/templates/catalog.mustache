@@ -1,23 +1,50 @@
 {{!
-    Catálogo del curso (§12.2). Espera: courseid (int) y sources (array de
-    fuentes visibles con sus books: name, books[] con id, title, summary,
-    chapter_count, latest, versions[] y la URL /catalog/{source}/{book}/preview).
+    Catálogo del curso (§12.2). Espera: sources[] (name, books[] con id,
+    title, summary, tags[], audience, chapter_count, latest, previewurl,
+    versionurl), hassources y candeploy.
 }}
 <div class="local-courseascode-catalog">
     {{#sources}}
-        <h3>@{{name}}</h3>
+        <h3 class="mt-3">@{{name}}</h3>
         {{#books}}
-            <div class="card mb-2">
+            <div class="card mb-3">
                 <div class="card-body">
-                    <h5 class="card-title">{{title}} <small class="text-muted">@{{source}}/{{id}}</small></h5>
-                    <p class="card-text">{{summary}}</p>
-                    <p class="text-muted">{{#str}} chaptercount, local_courseascode {{/str}}: {{chapter_count}} ·
-                        {{#str}} latest, local_courseascode {{/str}}: {{latest}}</p>
-                    <a class="btn btn-secondary" href="{{preview_url}}" target="_blank">{{#str}} preview {{/str}}</a>
-                    <a class="btn btn-primary" href="bookversion.php?id={{courseid}}&source={{source}}&book={{id}}">
-                        {{#str}} addtocourse {{/str}} v{{latest}}</a>
+                    <h5 class="card-title">
+                        {{title}}
+                        <small class="text-muted">@{{name}}/{{id}}</small>
+                    </h5>
+                    {{#summary}}<p class="card-text">{{summary}}</p>{{/summary}}
+                    <p class="text-muted mb-1">
+                        {{#str}} chaptercount, local_courseascode {{/str}}: {{chapter_count}} ·
+                        {{#str}} latest, local_courseascode {{/str}}: v{{latest}}
+                        {{#audience}} · {{audience}}{{/audience}}
+                    </p>
+                    {{#hastags}}
+                        <p class="mb-2">
+                            {{#tags}}<span class="badge bg-secondary me-1">{{tag}}</span>{{/tags}}
+                        </p>
+                    {{/hastags}}
+                    <a class="btn btn-secondary" href="{{previewurl}}" target="_blank" rel="noopener">
+                        {{#str}} preview, local_courseascode {{/str}}
+                    </a>
+                    {{#candeploy}}
+                        <a class="btn btn-primary" href="{{versionurl}}">
+                            {{#str}} addtocourse, local_courseascode {{/str}} v{{latest}}
+                        </a>
+                    {{/candeploy}}
+                    {{^candeploy}}
+                        <a class="btn btn-outline-primary" href="{{versionurl}}">
+                            {{#str}} versions, local_courseascode {{/str}}
+                        </a>
+                    {{/candeploy}}
                 </div>
             </div>
         {{/books}}
+        {{^books}}
+            <p class="text-muted">{{#str}} nobooksinsource, local_courseascode {{/str}}</p>
+        {{/books}}
     {{/sources}}
+    {{^hassources}}
+        <div class="alert alert-info">{{#str}} catalogempty, local_courseascode {{/str}}</div>
+    {{/hassources}}
 </div>

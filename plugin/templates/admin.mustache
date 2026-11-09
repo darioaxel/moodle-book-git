@@ -1,21 +1,58 @@
 {{!
-    Panel del curso (§23.1). Espera: courseid y books[] (content_id, source,
-    deployed_version, state, severity). Acciones Preview/Compare/Deploy: post-Beta.
+    Panel del curso (§23.1): books[] con contentid, published, available,
+    statelabel, stateclass, iscritical, statedetail, hasupdate, viewurl,
+    hasviewurl, previewurl, versionurl, updateurl; más hasbooks y catalogurl.
 }}
 <div class="local-courseascode-admin">
-    <h3>{{#str}} admin, local_courseascode {{/str}}</h3>
-    <table class="table">
-        <thead>
-            <tr><th>Book</th><th>{{#str}} version, local_courseascode {{/str}}</th><th>State</th></tr>
-        </thead>
-        <tbody>
-            {{#books}}
+    <p><a href="{{catalogurl}}">&laquo; {{#str}} catalog, local_courseascode {{/str}}</a></p>
+    {{#hasbooks}}
+        <table class="table table-striped">
+            <thead>
                 <tr>
-                    <td>@{{source}}/{{content_id}}</td>
-                    <td>{{deployed_version}}</td>
-                    <td>{{state}}{{#severity}} <span class="badge badge-danger">{{severity}}</span>{{/severity}}</td>
+                    <th>Book</th>
+                    <th>{{#str}} publishedversion, local_courseascode {{/str}}</th>
+                    <th>{{#str}} availableversion, local_courseascode {{/str}}</th>
+                    <th>{{#str}} state, local_courseascode {{/str}}</th>
+                    <th>{{#str}} actions, local_courseascode {{/str}}</th>
                 </tr>
-            {{/books}}
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                {{#books}}
+                    <tr>
+                        <td><a href="{{versionurl}}"><code>{{contentid}}</code></a></td>
+                        <td>v{{published}}</td>
+                        <td>{{available}}</td>
+                        <td>
+                            <span class="badge bg-{{stateclass}}">{{statelabel}}</span>
+                            {{#iscritical}}
+                                <span class="badge bg-danger">{{#str}} critical, local_courseascode {{/str}}</span>
+                            {{/iscritical}}
+                            {{#statedetail}}<br><small class="text-muted">{{statedetail}}</small>{{/statedetail}}
+                        </td>
+                        <td>
+                            {{#hasviewurl}}
+                                <a class="btn btn-sm btn-secondary" href="{{viewurl}}">
+                                    {{#str}} viewincourse, local_courseascode {{/str}}
+                                </a>
+                            {{/hasviewurl}}
+                            <a class="btn btn-sm btn-secondary" href="{{previewurl}}" target="_blank" rel="noopener">
+                                {{#str}} preview, local_courseascode {{/str}}
+                            </a>
+                            {{#hasupdate}}
+                                <a class="btn btn-sm btn-primary" href="{{updateurl}}">
+                                    {{#str}} update, local_courseascode {{/str}}
+                                </a>
+                            {{/hasupdate}}
+                        </td>
+                    </tr>
+                {{/books}}
+            </tbody>
+        </table>
+    {{/hasbooks}}
+    {{^hasbooks}}
+        <div class="alert alert-info">
+            {{#str}} nobooksdeployed, local_courseascode {{/str}}
+            <a href="{{catalogurl}}">{{#str}} gotocatalog, local_courseascode {{/str}}</a>
+        </div>
+    {{/hasbooks}}
 </div>

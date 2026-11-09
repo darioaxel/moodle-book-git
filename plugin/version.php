@@ -14,8 +14,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_courseascode';
-$plugin->version = 2026102300;        // Esqueleto inicial (2026-10-23).
+$plugin->version = 2026110600;        // Páginas UI completas (2026-11-06).
 $plugin->requires = 2026100600;       // Moodle 5.3.0.
 $plugin->maturity = MATURITY_ALPHA;
-$plugin->release = '0.1.0';
+$plugin->release = '0.2.0';
 $plugin->dependencies = ['mod_book' => ANY_VERSION];
