@@ -32,7 +32,7 @@ $pageurl = new moodle_url('/local/courseascode/bookversion.php',
 $PAGE->set_url($pageurl);
 $PAGE->set_context($context);
 $PAGE->set_title(get_string('bookversion', 'local_courseascode'));
-$PAGE->set_heading(format_string($context->get_course()->fullname));
+$PAGE->set_heading(format_string(get_course($courseid)->fullname));
 
 $candeploy = has_capability('local/courseascode:deploy', $context)
     && has_capability('moodle/course:manageactivities', $context);

@@ -27,7 +27,7 @@ require_capability('local/courseascode:deploy', $context);
 $PAGE->set_url(new moodle_url('/local/courseascode/admin.php', ['id' => $courseid]));
 $PAGE->set_context($context);
 $PAGE->set_title(get_string('admin', 'local_courseascode'));
-$PAGE->set_heading(format_string($context->get_course()->fullname));
+$PAGE->set_heading(format_string(get_course($courseid)->fullname));
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('admin', 'local_courseascode'));
